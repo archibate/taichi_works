@@ -2,85 +2,85 @@
 import taichi as ti
 import taichi_glsl as ts
 from taichi_glsl import vec, vec2, vec3, math
-ti.init()
+
+## Classes
+def Vector2(*args, **kwargs):
+    return ti.Vector(2, ti.f32, *args, **kwargs)
+
 
 ## Define Variables
-N = 12
-pos = ti.Vector(2, ti.f32, N)
-img = ti.var(ti.f32, (512, 512))
+N = 2
+L = 4
+particles = Vector2(N)
+image = ti.var(ti.f32, (512, 512))
 
+nodes = Vector2()
+tree = ti.root.pointer(ti.i, 4 ** (L + 1))
+tree.place(nodes)
+
+
+## Algorithms
+@ti.func
+def tree_append(pos):
+    i = abs(pos >= 0.5).dot(vec(1, 2)) + 1
+    #while ti.is_active(tree, i):
+    nodes[i] = pos
+
+@ti.kernel
+def build_tree():
+    for i in particles:
+        tree_append(particles[i])
+
+@ti.func
+def paint_tree():
+    for i in ti.static(range(1, 4 + 1)):
+        par = vec(i % 2, i // 2) * 256
+        rap = par
+        if ti.is_active(tree, i):
+            rap = par + 256
+        for j, k in ti.ndrange((par.x, rap.x), (par.y, rap.y)):
+            image[j, k] = 0.1
 
 
 ## Helper Functions
 @ti.func
 def npow(x):
-    d = ts.normalizePow(x, -2, 1e-3)
-    if d.norm() > 1000:
-        d = d * 0
+    d = x * 0
+    if any(x != 0):
+        d = ts.normalizePow(x, -2, 1e-3)
     return d
-
-
-@ti.func
-def sdLine(u, v, p):
-    pu = p - u
-    vp = v - p
-    vu = v - u
-    puXvu = pu.cross(vu)
-    puOvu = pu.dot(vu)
-    vpOvu = vp.dot(vu)
-    ret = 0.0
-    if puOvu < 0:
-        ret = ts.length(pu)
-    elif vpOvu < 0:
-        ret = ts.length(vp)
-    else:
-        ret = puXvu * ts.invLength(vu)
-    return ret
-
-@ti.func
-def paintArrow(img: ti.template(), orig, dir):
-    res = vec(*img.shape)
-    I = orig * res
-    D = dir * res
-    J = I + D
-    W = 3
-    S = min(22, ts.length(D) * 0.5)
-    DS = ts.normalize(D) * S
-    SW = S + W
-    D1 = ti.Matrix.rotation2d(+math.pi * 3 / 4) @ DS
-    D2 = ti.Matrix.rotation2d(-math.pi * 3 / 4) @ DS
-    bmin, bmax = int(ti.floor(min(I, J))), int(ti.ceil(max(I, J)))
-    for P in ti.grouped(ti.ndrange((bmin.x - SW, bmax.x + SW), (bmin.y - SW, bmax.y + SW))):
-        c0 = ts.smoothstep(abs(sdLine(I, J, P)), W, W / 2)
-        c1 = ts.smoothstep(abs(sdLine(J, J + D1, P)), W, W / 2)
-        c2 = ts.smoothstep(abs(sdLine(J, J + D2, P)), W, W / 2)
-        img[P] = max(c0, c1, c2)
 
 
 ## Main Program
 @ti.kernel
 def init():
-    for i in pos:
-        pos[i] = ts.randND(2)
-
+    for i in particles:
+        particles[i] = ts.randND(2)
 
 @ti.func
-def compute_grad(pos):
-    return (pos - 0.5).yx * vec(-1, 1)
-
+def compute_grad(p):
+    acc = p * 0
+    for i in particles:
+        acc += npow(particles[i] - p)
+    return acc * 0.001
 
 @ti.kernel
 def render(mx: ti.f32, my: ti.f32):
-    pos = vec(mx, my)
-    acc = compute_grad(pos)
-    paintArrow(img, pos, acc)
+    p = vec(mx, my)
+    acc = compute_grad(p)
+    tree_append(p)
+    ts.paintArrow(image, p, acc)
+    paint_tree()
 
 
 ## GUI Loop
+init()
 with ti.GUI('FFM Gravity') as gui:
     while gui.running and not gui.get_event(gui.ESCAPE):
-        img.fill(0)
+        image.fill(0)
+        tree.deactivate_all()
+        build_tree()
         render(*gui.get_cursor_pos())
-        gui.circles(pos.to_numpy(), radius=2)
-        gui.set_image(img)
+        gui.set_image(image)
+        gui.circles(particles.to_numpy(), radius=2)
         gui.show()
