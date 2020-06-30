@@ -29,6 +29,12 @@ def tree_append(p):
         i = int(p * 4).dot(vec(1, 4)) + 16
         j = int(q * 4).dot(vec(1, 4)) + 16
         nodes[j] = q
+        if ti.is_active(tree, i):
+            q = nodes[i]
+            nodes[i] = (p + q) / 2
+            i = int(p * 8).dot(vec(1, 8)) + 64
+            j = int(q * 8).dot(vec(1, 8)) + 64
+            nodes[j] = q
     nodes[i] = p
 
 @ti.kernel
@@ -49,7 +55,6 @@ def paint_tree():
         par = vec(i % 4, i // 4) * 128
         rap = par
         if ti.is_active(tree, i + 16):
-            print(i)
             rap = par + 128
         for j, k in ti.ndrange((par.x, rap.x), (par.y, rap.y)):
             image[j, k] = max(image[j, k], 0.2)
@@ -57,10 +62,9 @@ def paint_tree():
         par = vec(i % 8, i // 8) * 64
         rap = par
         if ti.is_active(tree, i + 64):
-            print(i)
-            rap = par + 128
+            rap = par + 64
         for j, k in ti.ndrange((par.x, rap.x), (par.y, rap.y)):
-            image[j, k] = max(image[j, k], 0.2)
+            image[j, k] = max(image[j, k], 0.3)
 
 
 ## Helper Functions
