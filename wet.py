@@ -21,10 +21,15 @@ tree.place(nodes)
 
 ## Algorithms
 @ti.func
-def tree_append(pos):
-    i = abs(pos >= 0.5).dot(vec(1, 2)) + 1
-    #while ti.is_active(tree, i):
-    nodes[i] = pos
+def tree_append(p):
+    i = int(p * 2).dot(vec(1, 2)) + 4
+    if ti.is_active(tree, i):
+        q = nodes[i]
+        nodes[i] = (p + q) / 2
+        i = int(p * 4).dot(vec(1, 4)) + 16
+        j = int(q * 4).dot(vec(1, 4)) + 16
+        nodes[j] = q
+    nodes[i] = p
 
 @ti.kernel
 def build_tree():
@@ -33,13 +38,29 @@ def build_tree():
 
 @ti.func
 def paint_tree():
-    for i in ti.static(range(1, 4 + 1)):
+    for i in ti.static(range(4)):
         par = vec(i % 2, i // 2) * 256
         rap = par
-        if ti.is_active(tree, i):
+        if ti.is_active(tree, i + 4):
             rap = par + 256
         for j, k in ti.ndrange((par.x, rap.x), (par.y, rap.y)):
-            image[j, k] = 0.1
+            image[j, k] = max(image[j, k], 0.1)
+    for i in range(16):
+        par = vec(i % 4, i // 4) * 128
+        rap = par
+        if ti.is_active(tree, i + 16):
+            print(i)
+            rap = par + 128
+        for j, k in ti.ndrange((par.x, rap.x), (par.y, rap.y)):
+            image[j, k] = max(image[j, k], 0.2)
+    for i in range(64):
+        par = vec(i % 8, i // 8) * 64
+        rap = par
+        if ti.is_active(tree, i + 64):
+            print(i)
+            rap = par + 128
+        for j, k in ti.ndrange((par.x, rap.x), (par.y, rap.y)):
+            image[j, k] = max(image[j, k], 0.2)
 
 
 ## Helper Functions
