@@ -12,6 +12,9 @@ def npow(x):
 
 
 class RawGrader(ts.DataOriented):
+    def grader_init(self, *args, **kwargs):
+        pass
+
     def build_tree(self):
         pass
 
@@ -26,32 +29,53 @@ class RawGrader(ts.DataOriented):
         return acc
 
 
+class FMMNode(ts.TaichiClass):
+    @property
+    def mass(self):
+        return self.entries[0]
+
+    @property
+    def ind(self):
+        return self.entries[1]
+
+    @property
+    def CoM(self):
+        return self.entries[2]
+
+    @classmethod
+    def make(cls):
+        return cls(ti.var(ti.f32), ti.var(ti.i32), ti.Vector(2, ti.f32))
+
+
 class FMMGrader(ts.DataOriented):
-    def fmm_init(self, L=2, mps=4):
-        self.level = L
+    def grader_init(self, L=2):
+        self.n_level = L
         self.n_grid = 2 ** L
         self.grid_size = 1 / self.n_grid
-        self.max_per_cell = mps
-        # Level 0 is the minimal nodes / cells.
+        # Level 0 is the minimal nodes / grids.
         # Level L-1 is four maxmimum nodes.
         # Level L is the root node.
-        self.g_id = ti.var(ti.i32)
-        self.g_mass = ti.var(ti.f32)
-        self.g_CoM = ti.Vector(2, ti.f32)
-        self.tree = ti.root.bitmasked(ti.ij, self.n_grid)
-        self.tree.place(self.g_mass, self.g_CoM)
-        self.tree_ps = self.tree.dynamic(ti.k, self.max_per_cell)
-        self.tree_ps.place(self.g_id)
+        self.levels = []
+        self.nodes = []
+        prev_level = ti.root
+        for l in range(L):
+            node = FMMNode.make()
+            level = prev_level.bitmasked(ti.ij, 2)
+            level.place(node)
+            self.levels.append(level)
+            self.nodes.append(node)
+            prev_level = level
         self.img = ti.var(ti.f32, (512, 512))
 
     @ti.func
     def build_tree(self):
         for I in ti.grouped(self.tree):
-            ti.deactivate(self.tree_ps, I)
+            self.g_count[I] = 0
+            ti.deactivate(self.tree, I)
         for i in range(self.N):
             P = int(self.pos[i] * self.n_grid)
             print('at', P, i)
-            ti.append(self.tree_ps, P, i)
+            self.g_id[vec(P, ti.atomic_add(self.g_count[P], 1))] = i
         for I in ti.grouped(self.tree):
             self.g_mass[I] = self.cell_mass(I)
             self.g_CoM[I] = self.cell_CoM(I)
@@ -64,51 +88,35 @@ class FMMGrader(ts.DataOriented):
             gs = int(self.grid_size * 512)
             P = int(I * gs)
             for off in ti.grouped(ti.ndrange(gs, gs)):
-                clr = ti.length(self.tree_ps, I) / self.max_per_cell
+                clr = self.g_count[I] / self.max_per_cell
                 clr *= ti.exp(-100 * ts.sqrLength((P + off) / 512 - self.g_CoM[I]))
                 self.img[P + off] = clr
 
     @ti.func
-    def cell_mass(self, I):
-        mass = 0.0
-        len = ti.length(self.tree_ps, I)
-        for c in range(len):
-            mass += 1.0
-        return mass
-
-    @ti.func
-    def cell_CoM(self, I):
-        center = vec2(0.0)
-        len = ti.length(self.tree_ps, I)
-        for c in range(len):
-            id = self.g_id[vec(I, c)]
-            center += self.pos[id]
-        center *= 1 / len
-        return center
-
-    @ti.func
-    def compute_grad(self, pos, ki):
+    def compute_grad(self, pos):
         acc = vec2(0.0)
         # account this cell:
         I = int(pos * self.n_grid)
-        len = ti.length(self.tree_ps, I)
-        for c in range(len):
+        for c in range(self.g_count[I]):
             id = self.g_id[vec(I, c)]
-            if ki != id:
-                print('cg', ki, id)
-                acc += npow(self.pos[id] - pos)
+            d = self.pos[id] - pos
+            acc += npow(d)
+        for J in ti.grouped(ti.ndrange(self.n_grid, self.n_grid)):
+            if all(J != I):
+                d = self.g_CoM[J] - pos
+                acc += self.g_mass[J] * npow(d)
         return acc
 
 
-class MySolver(ts.Animation, FMMGrader):
-    def on_init(self, N=2):
+class MySolver(ts.Animation, FFMGrader):
+    def on_init(self, N=3):
         self.N = N
         self.pos = ti.Vector(2, ti.f32, N)
         self.vel = ti.Vector(2, ti.f32, N)
         self.circles = self.pos
         self.circle_radius = 2
         self.dt = 0.002
-        self.fmm_init()
+        self.grader_init()
 
     @ti.kernel
     def on_start(self):
@@ -120,24 +128,24 @@ class MySolver(ts.Animation, FMMGrader):
             self.vel[0] = vec(-1.5, +0.0)
             self.vel[1] = vec(+1.5, +0.0)
             self.pos[2] = vec(0.75, 0.5)
-        if ti.static(0):
+        if ti.static(1):
             self.pos[0] = vec(0.4, 0.34)
             self.pos[1] = vec(0.4, 0.38)
             self.vel[0] = vec(-1.0, +0.0)
             self.vel[1] = vec(+1.0, +0.0)
             self.pos[2] = vec(0.71, 0.6)
             self.vel[2] = vec(-0.1, -0.3)
-        if ti.static(1):
+        if ti.static(0):
             self.pos[0] = vec(0.4, 0.34)
             self.vel[0] = vec(+0.0, +0.0)
-            self.pos[1] = vec(0.71, 0.6)
+            self.pos[1] = vec(0.71, 0.55)
             self.vel[1] = vec(-0.1, -0.3)
 
     @ti.kernel
     def on_advance(self):
         self.build_tree()
         for i in self.pos:
-            acc = self.compute_grad(self.pos[i], i)
+            acc = self.compute_grad(self.pos[i])
             self.vel[i] += acc * self.dt
         for i in self.pos:
             self.pos[i] += self.vel[i] * self.dt
