@@ -34,7 +34,7 @@ class Node(tl.TaichiClass):
 
 
 ## Define Variables
-dt = 0.0001
+dt = 0.00005
 N = 6
 L = 4
 RES = 512
@@ -154,7 +154,7 @@ def render(mx: ti.f32, my: ti.f32):
 @ti.kernel
 def advance():
     for i in range(N):
-        acc = compute_grad(particles.pos[i]) * 0.01
+        acc = compute_grad(particles.pos[i])
         particles.vel[i] += acc * dt
     for i in range(N):
         particles.pos[i] += particles.vel[i] * dt
@@ -170,7 +170,7 @@ def compute_energy():
     for i in range(N):
         for j in range(i):
             pote_eng += tl.invLength(particles.pos[i] - particles.pos[j])
-    print(kine_eng * 0.5 - pote_eng * 0.01)
+    print(kine_eng * 0.5 - pote_eng)
 
 
 ## GUI Loop
@@ -185,7 +185,7 @@ with ti.GUI('Tree-code Gravity', RES) as gui:
             build_tree()
             advance()
         compute_energy()
-        #render(*gui.get_cursor_pos())
+        render(*gui.get_cursor_pos())
         gui.set_image(image)
         gui.circles(particles.pos.to_numpy(), radius=2)
         gui.show()
