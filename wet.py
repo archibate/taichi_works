@@ -9,8 +9,8 @@ def Vector2(*args, **kwargs):
 
 
 ## Define Variables
-N = 4
-L = 7
+N = 128
+L = 8
 RES = 512
 particles = Vector2(N)
 image = ti.var(ti.f32, (RES, RES))
@@ -73,8 +73,10 @@ def npow(x):
 @ti.kernel
 def init():
     if 1:
+        ti.random()
         for i in range(N):
-            particles[i] = [ti.random(), ti.random()]
+            particles[i] = ts.randND(2)
+        particles[N-1] = [0.125, 0.01]
 
 @ti.func
 def compute_grad(p):
