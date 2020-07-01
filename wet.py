@@ -23,17 +23,11 @@ tree.place(nodes)
 ## Algorithms
 @ti.func
 def tree_append(p):
-    i = int(p * 2).dot(vec(1, 2)) + 4
     l = 1
-    while ti.is_active(tree, i):
-        l += 1
-        if l >= L:
-            break
-        q = nodes[i]
+    while l <= L:
         i = int(p * 2**l).dot(vec(1, 2**l)) + 4**l
-        j = int(q * 2**l).dot(vec(1, 2**l)) + 4**l
-        nodes[j] = q
-    nodes[i] = p
+        nodes[i] = p
+        l += 1
 
 @ti.kernel
 def build_tree():
