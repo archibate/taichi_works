@@ -93,14 +93,13 @@ def compute_grad(p):
     acc = p * 0
     for i in range(N):
         acc += npow(particles.pos[i] - p)
-    return acc * 0.001
+    return acc * 0.0002
 
 @ti.kernel
 def render(mx: ti.f32, my: ti.f32):
     p = vec(mx, my)
     acc = compute_grad(p)
-    tree_append(p)
-    #ts.paintArrow(image, p, acc)
+    ts.paintArrow(image, p, acc)
     paint_tree()
 
 
@@ -109,8 +108,8 @@ init()
 with ti.GUI('FFM Gravity', RES) as gui:
     while gui.running and not gui.get_event(gui.ESCAPE):
         image.fill(0)
-        nodes.cpos.fill(0)
-        nodes.count.fill(0)
+        nodes.mpos.fill(0)
+        nodes.mass.fill(0)
         tree.deactivate_all()
         build_tree()
         render(*gui.get_cursor_pos())
