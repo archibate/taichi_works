@@ -16,11 +16,11 @@ class Particle(ts.TaichiClass):
 
 class Node(ts.TaichiClass):
     @property
-    def count(self):
+    def mass(self):
         return self.entries[0]
 
     @property
-    def cpos(self):
+    def mpos(self):
         return self.entries[1]
 
     @classmethod
@@ -44,18 +44,15 @@ tree.place(nodes)
 ## Algorithms
 @ti.func
 def tree_append(p):
-    l = 1
-    while l <= L:
+    for l in range(1, L):
         i = int(p * 2**l).dot(vec(1, 2**l)) + 4**l
-        nodes[i].cpos += p
-        nodes[i].count += 1.0
-        l += 1
+        nodes[i].mpos += p
+        nodes[i].mass += 1.0
 
 @ti.kernel
 def build_tree():
-    if 1:
-        for i in range(N):
-            tree_append(particles.pos[i])
+    for i in range(N):
+        tree_append(particles.pos[i])
 
 @ti.func
 def paint_tree():
@@ -88,16 +85,13 @@ def npow(x):
 ## Main Program
 @ti.kernel
 def init():
-    if 1:
-        ti.random()
-        for i in range(N):
-            particles.pos[i] = ts.randND(2)
-        particles.pos[N-1] = [0.125, 0.01]
+    for i in range(N):
+        particles.pos[i] = ts.randND(2)
 
 @ti.func
 def compute_grad(p):
     acc = p * 0
-    for i in particles:
+    for i in range(N):
         acc += npow(particles.pos[i] - p)
     return acc * 0.001
 
