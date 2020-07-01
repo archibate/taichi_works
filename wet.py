@@ -9,7 +9,7 @@ def Vector2(*args, **kwargs):
 
 
 ## Define Variables
-N = 6
+N = 4
 L = 7
 RES = 512
 particles = Vector2(N)
@@ -25,12 +25,11 @@ tree.place(nodes)
 def tree_append(p):
     i = int(p * 2).dot(vec(1, 2)) + 4
     l = 1
-    while True:#ti.is_active(tree, i):
+    while ti.is_active(tree, i):
         l += 1
         if l >= L:
             break
         q = nodes[i]
-        nodes[i] = (p + q) / 2
         i = int(p * 2**l).dot(vec(1, 2**l)) + 4**l
         j = int(q * 2**l).dot(vec(1, 2**l)) + 4**l
         nodes[j] = q
