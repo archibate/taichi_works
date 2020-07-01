@@ -9,10 +9,11 @@ def Vector2(*args, **kwargs):
 
 
 ## Define Variables
-N = 2
-L = 4
+N = 6
+L = 7
+RES = 512
 particles = Vector2(N)
-image = ti.var(ti.f32, (512, 512))
+image = ti.var(ti.f32, (RES, RES))
 
 nodes = Vector2()
 tree = ti.root.pointer(ti.i, 4 ** (L + 1))
@@ -23,48 +24,41 @@ tree.place(nodes)
 @ti.func
 def tree_append(p):
     i = int(p * 2).dot(vec(1, 2)) + 4
-    if ti.is_active(tree, i):
+    l = 1
+    while True:#ti.is_active(tree, i):
+        l += 1
+        if l >= L:
+            break
         q = nodes[i]
         nodes[i] = (p + q) / 2
-        i = int(p * 4).dot(vec(1, 4)) + 16
-        j = int(q * 4).dot(vec(1, 4)) + 16
+        i = int(p * 2**l).dot(vec(1, 2**l)) + 4**l
+        j = int(q * 2**l).dot(vec(1, 2**l)) + 4**l
         nodes[j] = q
-        if ti.is_active(tree, i):
-            q = nodes[i]
-            nodes[i] = (p + q) / 2
-            i = int(p * 8).dot(vec(1, 8)) + 64
-            j = int(q * 8).dot(vec(1, 8)) + 64
-            nodes[j] = q
     nodes[i] = p
 
 @ti.kernel
 def build_tree():
-    for i in particles:
-        tree_append(particles[i])
+    if 1:
+        for i in range(N):
+            tree_append(particles[i])
 
 @ti.func
 def paint_tree():
     for i in ti.static(range(4)):
-        par = vec(i % 2, i // 2) * 256
+        par = vec(i % 2, i // 2) * RES // 2
         rap = par
         if ti.is_active(tree, i + 4):
-            rap = par + 256
+            rap = par + RES // 2
         for j, k in ti.ndrange((par.x, rap.x), (par.y, rap.y)):
             image[j, k] = max(image[j, k], 0.1)
-    for i in range(16):
-        par = vec(i % 4, i // 4) * 128
-        rap = par
-        if ti.is_active(tree, i + 16):
-            rap = par + 128
-        for j, k in ti.ndrange((par.x, rap.x), (par.y, rap.y)):
-            image[j, k] = max(image[j, k], 0.2)
-    for i in range(64):
-        par = vec(i % 8, i // 8) * 64
-        rap = par
-        if ti.is_active(tree, i + 64):
-            rap = par + 64
-        for j, k in ti.ndrange((par.x, rap.x), (par.y, rap.y)):
-            image[j, k] = max(image[j, k], 0.3)
+    for l in ti.static(range(2, L)):
+        for i in range(4**l):
+            par = vec(i % 2**l, i // 2**l) * (RES // 2**l)
+            rap = par
+            if ti.is_active(tree, i + 4**l):
+                rap = par + RES // 2**l
+            for j, k in ti.ndrange((par.x, rap.x), (par.y, rap.y)):
+                image[j, k] = max(image[j, k], 0.1 * l)
 
 
 ## Helper Functions
@@ -79,8 +73,9 @@ def npow(x):
 ## Main Program
 @ti.kernel
 def init():
-    for i in particles:
-        particles[i] = ts.randND(2)
+    if 1:
+        for i in range(N):
+            particles[i] = [ti.random(), ti.random()]
 
 @ti.func
 def compute_grad(p):
@@ -94,13 +89,13 @@ def render(mx: ti.f32, my: ti.f32):
     p = vec(mx, my)
     acc = compute_grad(p)
     tree_append(p)
-    ts.paintArrow(image, p, acc)
+    #ts.paintArrow(image, p, acc)
     paint_tree()
 
 
 ## GUI Loop
 init()
-with ti.GUI('FFM Gravity') as gui:
+with ti.GUI('FFM Gravity', RES) as gui:
     while gui.running and not gui.get_event(gui.ESCAPE):
         image.fill(0)
         tree.deactivate_all()
