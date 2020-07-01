@@ -1,10 +1,10 @@
 ## Initialization
 import taichi as ti
-import taichi_glsl as ts
+import taichi_glsl as tl
 from taichi_glsl import vec, vec2, vec3, math
 
 ## Classes
-class Particle(ts.TaichiClass):
+class Particle(tl.TaichiClass):
     @property
     def pos(self):
         return self.entries[0]
@@ -14,7 +14,7 @@ class Particle(ts.TaichiClass):
         return ti.Vector(2, ti.f32, *_, **__)
 
 
-class Node(ts.TaichiClass):
+class Node(tl.TaichiClass):
     @property
     def mass(self):
         return self.entries[0]
@@ -30,8 +30,8 @@ class Node(ts.TaichiClass):
 
 
 ## Define Variables
-N = 128
-L = 8
+N = 1
+L = 4
 RES = 512
 particles = Particle.var(N)
 image = ti.var(ti.f32, (RES, RES))
@@ -78,34 +78,78 @@ def paint_tree():
 def npow(x):
     d = x * 0
     if any(x != 0):
-        d = ts.normalizePow(x, -2, 1e-3)
+        d = tl.normalizePow(x, -2, 1e-3)
     return d
 
 
 ## Main Program
 @ti.kernel
 def init():
+    particles.pos[0] = tl.randND(2)
+    if ~int(particles.pos[0].x * 9999) != -33:
+        for i in range(N):
+            particles.pos[i] = tl.randND(2)
+
+@ti.func
+def old_compute_grad(p):
+    acc = p * 0
     for i in range(N):
-        particles.pos[i] = ts.randND(2)
+        acc += npow(particles.pos[i] - p)
+    return acc
 
 @ti.func
 def compute_grad(p):
     acc = p * 0
-    for i in range(N):
-        acc += npow(particles.pos[i] - p)
-    return acc * 0.0002
+
+    print('\033[H\033[2J\033[3J')
+    for ch in range(4):
+        i = 4 + ch
+        if not ti.is_active(tree, i):
+            continue
+        size_sqr = 1 / 4
+        npos = nodes[i].mpos / nodes[i].mass
+        np2p = npos - p
+        if tl.sqrLength(np2p) >= size_sqr:
+            #print('l1', ch)
+            acc += npow(np2p) * nodes[i].mass
+        else:
+            bas = (ch % 2) * 4 + (ch // 2) * 8
+            for ch_ in range(4):
+                i = 16 + bas + ch_
+                if not ti.is_active(tree, i):
+                    continue
+                size_sqr = 1 / 16
+                npos = nodes[i].mpos / nodes[i].mass
+                np2p = npos - p
+                if tl.sqrLength(np2p) >= size_sqr:
+                    #print('l2', ch, ch_)
+                    acc += npow(np2p) * nodes[i].mass
+                else:
+                    baso = (ch % 2) * 4 + (ch // 2) * 8 * 4
+                    bas_ = (ch_ % 2) * 2 + (ch_ // 2) * 8 * 2
+                    for ch__ in range(4):
+                        i = 64 + baso + bas_ + ch__
+                        if not ti.is_active(tree, i):
+                            continue
+                        size_sqr = 1 / 64
+                        npos = nodes[i].mpos / nodes[i].mass
+                        np2p = npos - p
+                        #print('l3', ch, ch_, ch__)
+                        acc += npow(np2p) * nodes[i].mass
+
+    return acc
 
 @ti.kernel
 def render(mx: ti.f32, my: ti.f32):
     p = vec(mx, my)
-    acc = compute_grad(p)
-    ts.paintArrow(image, p, acc)
+    acc = compute_grad(p) * 0.008
+    tl.paintArrow(image, p, acc)
     paint_tree()
 
 
 ## GUI Loop
 init()
-with ti.GUI('FFM Gravity', RES) as gui:
+with ti.GUI('Tree-code Gravity', RES) as gui:
     while gui.running and not gui.get_event(gui.ESCAPE):
         image.fill(0)
         nodes.mpos.fill(0)
