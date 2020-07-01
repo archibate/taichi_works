@@ -4,18 +4,39 @@ import taichi_glsl as ts
 from taichi_glsl import vec, vec2, vec3, math
 
 ## Classes
-def Vector2(*args, **kwargs):
-    return ti.Vector(2, ti.f32, *args, **kwargs)
+class Particle(ts.TaichiClass):
+    @property
+    def pos(self):
+        return self.entries[0]
+
+    @classmethod
+    def _var(cls, *_, **__):
+        return ti.Vector(2, ti.f32, *_, **__)
+
+
+class Node(ts.TaichiClass):
+    @property
+    def count(self):
+        return self.entries[0]
+
+    @property
+    def cpos(self):
+        return self.entries[1]
+
+    @classmethod
+    def _var(cls, *_, **__):
+        return ti.var(ti.f32, *_, **__), ti.Vector(2, ti.f32, *_, **__)
+
 
 
 ## Define Variables
 N = 128
 L = 8
 RES = 512
-particles = Vector2(N)
+particles = Particle.var(N)
 image = ti.var(ti.f32, (RES, RES))
 
-nodes = Vector2()
+nodes = Node.var()
 tree = ti.root.pointer(ti.i, 4 ** (L + 1))
 tree.place(nodes)
 
@@ -26,14 +47,15 @@ def tree_append(p):
     l = 1
     while l <= L:
         i = int(p * 2**l).dot(vec(1, 2**l)) + 4**l
-        nodes[i] = p
+        nodes[i].cpos += p
+        nodes[i].count += 1.0
         l += 1
 
 @ti.kernel
 def build_tree():
     if 1:
         for i in range(N):
-            tree_append(particles[i])
+            tree_append(particles.pos[i])
 
 @ti.func
 def paint_tree():
@@ -69,14 +91,14 @@ def init():
     if 1:
         ti.random()
         for i in range(N):
-            particles[i] = ts.randND(2)
-        particles[N-1] = [0.125, 0.01]
+            particles.pos[i] = ts.randND(2)
+        particles.pos[N-1] = [0.125, 0.01]
 
 @ti.func
 def compute_grad(p):
     acc = p * 0
     for i in particles:
-        acc += npow(particles[i] - p)
+        acc += npow(particles.pos[i] - p)
     return acc * 0.001
 
 @ti.kernel
@@ -93,9 +115,11 @@ init()
 with ti.GUI('FFM Gravity', RES) as gui:
     while gui.running and not gui.get_event(gui.ESCAPE):
         image.fill(0)
+        nodes.cpos.fill(0)
+        nodes.count.fill(0)
         tree.deactivate_all()
         build_tree()
         render(*gui.get_cursor_pos())
         gui.set_image(image)
-        gui.circles(particles.to_numpy(), radius=2)
+        gui.circles(particles.pos.to_numpy(), radius=2)
         gui.show()
