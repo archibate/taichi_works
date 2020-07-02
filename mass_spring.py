@@ -1,16 +1,17 @@
 import taichi as ti
 import taichi_glsl as tl
-from taichi_glsl import vec, vec2
+from taichi_glsl import vec, vec2, math
 import numpy as np
 ti.init()
 
 
-dt = 0.07
+dt = 0.1
 N = 3
-beta = 0.3
+beta = 0.5
 beta_dt = beta * dt
 alpha_dt = (1 - beta) * dt
 L = 1
+stiff = 100
 
 
 x = ti.Vector(2, ti.f32, N)
@@ -18,9 +19,7 @@ v = ti.Vector(2, ti.f32, N)
 b = ti.Vector(2, ti.f32, N)
 F = ti.Vector(2, ti.f32, N)
 K = ti.var(ti.f32)
-A = ti.var(ti.f32)
 ti.root.bitmasked(ti.ij, N).place(K)
-ti.root.bitmasked(ti.ij, N).place(A)
 
 
 @ti.func
@@ -30,15 +29,15 @@ def link(i, j, k):
 
 @ti.kernel
 def init():
-    link(0, 1, 1.0)
-    link(0, 2, 1.0)
-    link(1, 2, 1.0)
+    link(0, 1, stiff)
+    link(0, 2, stiff)
+    link(1, 2, stiff)
     ang = 0.0
-    x[0] = tl.vec(ti.sin(ang), ti.cos(ang)) * L / ti.math.sqrt(3) * 0.9
-    ang += ti.math.tau / 3
-    x[1] = tl.vec(ti.sin(ang), ti.cos(ang)) * L / ti.math.sqrt(3) * 0.9
-    ang += ti.math.tau / 3
-    x[2] = tl.vec(ti.sin(ang), ti.cos(ang)) * L / ti.math.sqrt(3) * 0.9
+    x[0] = vec(ti.sin(ang), ti.cos(ang)) * L / math.sqrt(3) * 0.9
+    ang += math.tau / 3
+    x[1] = vec(ti.sin(ang), ti.cos(ang)) * L / math.sqrt(3) * 0.9
+    ang += math.tau / 3
+    x[2] = vec(ti.sin(ang), ti.cos(ang)) * L / math.sqrt(3) * 0.9
 
 @ti.kernel
 def explicit():
@@ -64,18 +63,6 @@ v' = v + Mdt @ [beta v' + alpha v]
 (I - beta Mdt) @ v' = (I + alpha Mdt) @ v
 '''
 
-@ti.kernel
-def init_A():
-    '''
-    #dv sx
-    M[i, j] = K[i, j]
-    M[i, i] = -sum(K[i, j] for j)
-    A[i, j] = M[i, j] * dt
-    '''
-    for i, j in K:
-        A[i, j] = K[i, j]
-        A[i, i] -= K[i, j]
-
 @ti.func
 def Acc(v: ti.template(), x: ti.template(), dt):
     for i, j in K:
@@ -96,7 +83,7 @@ def prepare():
 def jacobi():
     for i in v:
         b[i] = x[i] + F[i] * beta_dt ** 2
-        F[i] = tl.vec2(0.0)
+        F[i] = vec2(0.0)
     Acc(F, b, 1)
 
 @ti.kernel
@@ -124,7 +111,6 @@ def export_lines(out: ti.ext_arr()) -> ti.i32:
 
 
 init()
-init_A()
 with ti.GUI('Mass Spring') as gui:
     while gui.running and not gui.get_event(gui.ESCAPE):
         if gui.is_pressed(gui.LMB) or gui.is_pressed(gui.RMB):
