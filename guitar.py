@@ -3,12 +3,14 @@ import taichi_glsl as tl
 ti.init()
 
 
-dt = 0.03
+dt = 0.05
 N = 32
 
 
 x = ti.var(ti.f32, N)
+y = ti.var(ti.f32, N)
 v = ti.var(ti.f32, N)
+u = ti.var(ti.f32, N)
 A = ti.var(ti.f32, (N, N))
 K = ti.var(ti.f32)
 ti.root.bitmasked(ti.ij, N).place(K)
@@ -46,28 +48,32 @@ def init_A():
     A[i, j] = -M[i, j] * dt
     '''
     for i, j in A:
-        A[i, j] = abs(i == j)
+        A[i, j] = 0
     for i, j in K:
         A[i, j] = -K[i, j] * dt
         A[i, i] += K[i, j] * dt
+    for i in x:
+        y[i] = x[i]
+        u[i] = v[i]
 
 @ti.kernel
 def step_A():
     for i in v:
+        u[i] = v[i]
         for j in range(N):
-            v[i] += -A[i, j] * x[j]
-    for i in x:
-        x[i] += v[i] * dt
+            u[i] += -A[i, j] * y[j]
+        y[i] = u[i] * dt + x[i]
 
 @ti.kernel
 def update_x():
     for i in x:
-        x[i] += dt * v[i]
+        x[i] = y[i]
+        v[i] = u[i]
 
 
 def implicit():
     init_A()
-    for i in range(100):
+    for i in range(200):
         step_A()
     update_x()
 
