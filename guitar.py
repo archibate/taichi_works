@@ -25,7 +25,7 @@ def init():
         K[i - 1, i] = 100
         K[i, i - 1] = 100
     for i in range(N):
-        D[i] = 100
+        D[i] = 10
 
 @ti.kernel
 def explicit():
@@ -47,7 +47,7 @@ v' = v + Mdt @ v'
 
 '''
 v' = v + Mdt @ [beta v' + alpha v]
-(I - beta Mdt) @ v' = (I - alpha Mdt) @ v
+(I - beta Mdt) @ v' = (I + alpha Mdt) @ v
 '''
 
 @ti.kernel
@@ -61,19 +61,23 @@ def init_A():
     for i, j in A:
         A[i, j] = 0
     for i, j in K:
-        A[i, j] = K[i, j] * dt
-        A[i, i] -= (K[i, j] + D[i]) * dt
+        A[i, j] = K[i, j]
+        A[i, i] -= K[i, j] + D[i]
+    for i in x:
+        x[i] = v[i] * alpha * dt + x[i]
+        for j in range(N):
+            v[i] += A[i, j] * x[j] * alpha * dt
     for i in x:
         y[i] = x[i]
         u[i] = v[i]
 
 @ti.kernel
-def step_A():
+def jacobi_A():
     for i in v:
         u[i] = v[i]
         for j in range(N):
-            u[i] += A[i, j] * y[j]
-        y[i] = u[i] * dt + x[i]
+            u[i] += A[i, j] * y[j] * beta * dt
+        y[i] = u[i] * beta * dt + x[i]
 
 @ti.kernel
 def update_x():
@@ -84,8 +88,8 @@ def update_x():
 
 def implicit():
     init_A()
-    for i in range(400):
-        step_A()
+    for i in range(200):
+        jacobi_A()
     update_x()
 
 
