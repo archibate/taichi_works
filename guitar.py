@@ -4,7 +4,7 @@ ti.init()
 
 
 dt = 0.05
-N = 32
+N = 256
 beta = 0.5
 alpha = 1 - beta
 
@@ -25,7 +25,7 @@ def init():
         K[i - 1, i] = 100
         K[i, i - 1] = 100
     for i in range(N):
-        D[i] = 10
+        D[i] = 1
 
 @ti.kernel
 def explicit():
@@ -88,7 +88,7 @@ def update_x():
 
 def implicit():
     init_A()
-    for i in range(200):
+    for i in range(12):
         jacobi_A()
     update_x()
 
@@ -101,9 +101,9 @@ with ti.GUI('Guitar', (1024, 256)) as gui:
             i = int(mx * N)
             gui.rect((i / N, 0), ((i + 1) / N, 1), color=0x666666)
             if gui.is_pressed(gui.LMB):
-                x[i] = my * 2 - 1
+                x[i] = (my * 2 - 1) * 3
             else:
-                v[i] = my * 2 - 1
+                v[i] = (my * 2 - 1) * 3
         if gui.is_pressed('r'):
             x.fill(0)
             v.fill(0)
