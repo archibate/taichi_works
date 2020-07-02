@@ -10,13 +10,14 @@ alpha = 1 - beta
 
 
 x = ti.var(ti.f32, N)
-y = ti.var(ti.f32, N)
 v = ti.var(ti.f32, N)
-u = ti.var(ti.f32, N)
-A = ti.var(ti.f32, (N, N))
+b = ti.var(ti.f32, N)
+F = ti.var(ti.f32, N)
 D = ti.var(ti.f32, N)
 K = ti.var(ti.f32)
+A = ti.var(ti.f32)
 ti.root.bitmasked(ti.ij, N).place(K)
+ti.root.bitmasked(ti.ij, N).place(A)
 
 
 @ti.kernel
@@ -58,42 +59,44 @@ def init_A():
     M[i, i] = -sum(K[i, j] for j) - D[i]
     A[i, j] = M[i, j] * dt
     '''
-    for i, j in A:
-        A[i, j] = 0
     for i, j in K:
         A[i, j] = K[i, j]
         A[i, i] -= K[i, j] + D[i]
-    for i in x:
-        x[i] = v[i] * alpha * dt + x[i]
-        for j in range(N):
-            v[i] += A[i, j] * x[j] * alpha * dt
-    for i in x:
-        y[i] = x[i]
-        u[i] = v[i]
 
 @ti.kernel
-def jacobi_A():
+def prepare():
+    for i in x:
+        x[i] += v[i] * alpha * dt
+    for i, j in A:
+        v[i] += A[i, j] * x[j] * alpha * dt
+    for i in x:
+        b[i] = x[i]
+        x[i] = x[i] + v[i] * beta * dt
+
+@ti.kernel
+def jacobi():
     for i in v:
-        u[i] = v[i]
-        for j in range(N):
-            u[i] += A[i, j] * y[j] * beta * dt
-        y[i] = u[i] * beta * dt + x[i]
+        b[i] = x[i] + F[i] * (beta * dt) ** 2
+        F[i] = 0.0
+    for i, j in A:
+        F[i] += A[i, j] * b[j]
 
 @ti.kernel
-def update_x():
+def update_pos():
     for i in x:
-        x[i] = y[i]
-        v[i] = u[i]
+        x[i] = b[i]
+        v[i] += F[i] * beta * dt
 
 
 def implicit():
-    init_A()
+    prepare()
     for i in range(12):
-        jacobi_A()
-    update_x()
+        jacobi()
+    update_pos()
 
 
 init()
+init_A()
 with ti.GUI('Guitar', (1024, 256)) as gui:
     while gui.running and not gui.get_event(gui.ESCAPE):
         if gui.is_pressed(gui.LMB) or gui.is_pressed(gui.RMB):
