@@ -6,8 +6,8 @@ import math
 ti.init()
 
 
-dt = 0.001
-N = 64
+dt = 0.0005
+N = 128
 NN = N, N
 W = 1
 L = W / N
@@ -15,6 +15,7 @@ beta = 0.5
 beta_dt = beta * dt
 alpha_dt = (1 - beta) * dt
 stiff = 8000
+damp = 1.6
 
 
 x = ti.Vector(3, ti.f32, NN)
@@ -26,20 +27,26 @@ F = ti.Vector(3, ti.f32, NN)
 @ti.kernel
 def init():
     for i in ti.grouped(x):
-        x[i] = tl.vec((i + 0.5) * L - 0.5, 0)
+        x[i] = tl.vec((i + 0.5) * L + tl.vec(-0.5, 0.0), 0)
 
 @ti.kernel
+def e_accel():
+    Acc(v, x, dt)
+
+@ti.kernel
+def e_update():
+    for i in ti.grouped(x):
+        v[i] *= math.exp(dt * -damp)
+        x[i] += dt * v[i]
+
 def explicit():
     '''
     v' = v + Mdt @ v
     x' = x + v'dt
     '''
-    for i, j in K:
-        disp = x[j] - x[i]
-        acc = K[i, j] * disp * (disp.norm() - L) / L**2
-        v[i] += dt * acc
-    for i in x:
-        x[i] += dt * v[i]
+    e_accel()
+    collide(x, v)
+    e_update()
 
 #############################################
 '''
@@ -60,14 +67,19 @@ def Acc(v: ti.template(), x: ti.template(), dt):
         acc = x[i] * 0
         for d in ti.static(links):
             disp = x[tl.clamp(i + d, 0, tl.vec(*NN) - 1)] - x[i]
-            acc += disp * (disp.norm() - L) / L**2
+            dis = disp.norm()
+            #disv = v[tl.clamp(i + d, 0, tl.vec(*NN) - 1)] - v[i]
+            #acc += (damp / stiff) * disv * disv.dot(disp) / (dis * disv.norm_sqr())
+            acc += disp * (dis - L) / L**2
         v[i] += stiff * acc * dt
+        v[i] *= ti.exp(-damp * dt)
 
 @ti.kernel
 def prepare():
-    for i in ti.grouped(x):
-        x[i] += v[i] * alpha_dt
-    Acc(v, x, alpha_dt)
+    if ti.static(beta != 1):
+        for i in ti.grouped(x):
+            x[i] += v[i] * alpha_dt
+        Acc(v, x, alpha_dt)
     for i in ti.grouped(x):
         b[i] = x[i]
         x[i] += v[i] * beta_dt
@@ -91,13 +103,13 @@ def ballBoundReflect(pos, vel, center, radius):
     return ret
 
 @ti.kernel
-def collide():
+def collide(x: ti.template(), v: ti.template()):
     for i in ti.grouped(x):
         v[i].y -= 0.98 * dt
     #for i in ti.grouped(x):
-    #    v[i] = tl.boundReflect(b[i], v[i], -1, 1)
+    #    v[i] = tl.boundReflect(x[i], v[i], -1, 1)
     for i in ti.grouped(x):
-        v[i] = ballBoundReflect(b[i], v[i], tl.vec(+0.0, -1.0, -0.2), 0.4)
+        v[i] = ballBoundReflect(x[i], v[i], tl.vec(+0.0, -0.4, -0.2), 0.4)
 
 @ti.kernel
 def update_pos():
@@ -107,9 +119,9 @@ def update_pos():
 
 def implicit():
     prepare()
-    for i in range(12):
+    for i in range(45):
         jacobi()
-    collide()
+    collide(b, v)
     update_pos()
 
 
@@ -155,8 +167,8 @@ scene.set_light_dir([-1, 1, -1])
 with ti.GUI('Mass Spring') as gui:
     while gui.running and not gui.get_event(gui.ESCAPE):
         if not gui.is_pressed(gui.SPACE):
-            for i in range(16):
-                implicit()
+            for i in range(15):
+                explicit()
             update_display()
 
         scene.camera.from_mouse(gui)
