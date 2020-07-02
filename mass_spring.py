@@ -6,15 +6,15 @@ import math
 ti.init()
 
 
-dt = 0.003
-N = 32
+dt = 0.001
+N = 64
 NN = N, N
 W = 1
 L = W / N
 beta = 0.5
 beta_dt = beta * dt
 alpha_dt = (1 - beta) * dt
-stiff = 3000
+stiff = 8000
 
 
 x = ti.Vector(3, ti.f32, NN)
@@ -79,12 +79,25 @@ def jacobi():
         F[i] = b[i] * 0
     Acc(F, b, 1)
 
+@ti.func
+def ballBoundReflect(pos, vel, center, radius):
+    ret = vel
+    above = tl.distance(pos, center) - radius
+    if above <= 0:
+        normal = tl.normalize(pos - center)
+        NoV = tl.dot(vel, normal)
+        if NoV < 0:
+            ret -= NoV * normal
+    return ret
+
 @ti.kernel
 def collide():
     for i in ti.grouped(x):
         v[i].y -= 0.98 * dt
+    #for i in ti.grouped(x):
+    #    v[i] = tl.boundReflect(b[i], v[i], -1, 1)
     for i in ti.grouped(x):
-        v[i] = tl.boundReflect(b[i], v[i], -1, 1)
+        v[i] = ballBoundReflect(b[i], v[i], tl.vec(+0.0, -1.0, -0.2), 0.4)
 
 @ti.kernel
 def update_pos():
@@ -96,20 +109,20 @@ def implicit():
     prepare()
     for i in range(12):
         jacobi()
-    update_pos()
     collide()
+    update_pos()
 
 
 scene = t3.Scene()
 model = t3.Model()
 scene.add_model(model)
 
-faces = t3.Face.var(N**2 * 3)
-lines = t3.Line.var(N**2 * 2)
+faces = t3.Face.var(N**2 * 4)
+#lines = t3.Line.var(N**2 * 2)
 vertices = t3.Vertex.var(N**2)
 model.set_vertices(vertices)
 model.add_geometry(faces)
-model.add_geometry(lines)
+#model.add_geometry(lines)
 
 @ti.kernel
 def init_display():
@@ -123,10 +136,12 @@ def init_display():
         i.x -= 1
         d = i.dot(tl.vec(N, 1))
         i.y -= 1
-        faces[a * 2 + 0].idx = tl.vec(a, b, c)
-        faces[a * 2 + 1].idx = tl.vec(a, c, d)
-        lines[a * 2 + 0].idx = tl.vec(a, b)
-        lines[a * 2 + 1].idx = tl.vec(a, d)
+        faces[a * 4 + 0].idx = tl.vec(a, b, c)
+        faces[a * 4 + 1].idx = tl.vec(a, c, d)
+        faces[a * 4 + 2].idx = tl.vec(b, a, d)
+        faces[a * 4 + 3].idx = tl.vec(b, d, c)
+        #lines[a * 2 + 0].idx = tl.vec(a, b)
+        #lines[a * 2 + 1].idx = tl.vec(a, d)
 
 @ti.kernel
 def update_display():
@@ -140,7 +155,7 @@ scene.set_light_dir([-1, 1, -1])
 with ti.GUI('Mass Spring') as gui:
     while gui.running and not gui.get_event(gui.ESCAPE):
         if not gui.is_pressed(gui.SPACE):
-            for i in range(1):
+            for i in range(16):
                 implicit()
             update_display()
 
