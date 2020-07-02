@@ -3,7 +3,7 @@ import taichi_glsl as tl
 ti.init()
 
 
-dt = 0.04
+dt = 0.05
 N = 32
 beta = 0.5
 alpha = 1 - beta
