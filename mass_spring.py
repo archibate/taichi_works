@@ -1,33 +1,42 @@
 import taichi as ti
 import taichi_glsl as tl
+import numpy as np
 ti.init()
 
 
 dt = 0.07
-N = 256
+N = 3
 beta = 0.3
 beta_dt = beta * dt
 alpha_dt = (1 - beta) * dt
 
 
-x = ti.var(ti.f32, N)
-v = ti.var(ti.f32, N)
-b = ti.var(ti.f32, N)
-F = ti.var(ti.f32, N)
-D = ti.var(ti.f32, N)
+x = ti.Vector(2, ti.f32, N)
+v = ti.Vector(2, ti.f32, N)
+b = ti.Vector(2, ti.f32, N)
+F = ti.Vector(2, ti.f32, N)
 K = ti.var(ti.f32)
 A = ti.var(ti.f32)
 ti.root.bitmasked(ti.ij, N).place(K)
 ti.root.bitmasked(ti.ij, N).place(A)
 
 
+@ti.func
+def link(i, j, k):
+    K[j, i] = k
+    K[i, j] = k
+
 @ti.kernel
 def init():
-    for i in range(1, N):
-        K[i - 1, i] = 100
-        K[i, i - 1] = 100
-    for i in range(N):
-        D[i] = 1
+    link(0, 1, 1.0)
+    link(0, 2, 1.0)
+    link(1, 2, 1.0)
+    ang = 0.0
+    x[0] = [ti.sin(ang), ti.cos(ang)]
+    ang += ti.math.tau / 3
+    x[1] = [ti.sin(ang), ti.cos(ang)]
+    ang += ti.math.tau / 3
+    x[2] = [ti.sin(ang), ti.cos(ang)]
 
 @ti.kernel
 def explicit():
@@ -36,7 +45,7 @@ def explicit():
     x' = x + v'dt
     '''
     for i, j in K:
-        acc = K[i, j] * (x[j] - x[i]) - D[i] * x[i]
+        acc = K[i, j] * (x[j] - x[i])
         v[i] += dt * acc
     for i in x:
         x[i] += dt * v[i]
@@ -57,12 +66,12 @@ def init_A():
     '''
     #dv sx
     M[i, j] = K[i, j]
-    M[i, i] = -sum(K[i, j] for j) - D[i]
+    M[i, i] = -sum(K[i, j] for j)
     A[i, j] = M[i, j] * dt
     '''
     for i, j in K:
         A[i, j] = K[i, j]
-        A[i, i] -= K[i, j] + D[i]
+        A[i, i] -= K[i, j]
 
 @ti.kernel
 def prepare():
@@ -95,30 +104,44 @@ def implicit():
         jacobi()
     update_pos()
 
+@ti.kernel
+def export_lines(out: ti.ext_arr()) -> ti.i32:
+    n = 0
+    for i, j in K:
+        print(i, j)
+        if i < j:
+            p = ti.atomic_add(n, 1)
+            out[p, 0] = i
+            out[p, 1] = j
+    return n
+
 
 init()
 init_A()
-with ti.GUI('Guitar', (1024, 256)) as gui:
+with ti.GUI('Mass Spring') as gui:
     while gui.running and not gui.get_event(gui.ESCAPE):
         if gui.is_pressed(gui.LMB) or gui.is_pressed(gui.RMB):
             mx, my = gui.get_cursor_pos()
             i = int(mx * N)
             gui.rect((i / N, 0), ((i + 1) / N, 1), color=0x666666)
             if gui.is_pressed(gui.LMB):
-                x[i] = (my * 2 - 1) * 3
+                x[i].y = (my * 2 - 1) * 3
             else:
-                v[i] = (my * 2 - 1) * 3
+                v[i].y = (my * 2 - 1) * 3
         if gui.is_pressed('r'):
             x.fill(0)
             v.fill(0)
 
         if not gui.is_pressed(gui.SPACE):
-            implicit()
-        pp = None
-        for i in range(N):
-            cp = ((i + 0.5) / N, x[i] * 0.5 + 0.5)
-            gui.circle(cp, radius=2)
-            if pp is not None:
-                gui.line(pp, cp, radius=1)
-            pp = cp
+            explicit()
+
+        x_ = x.to_numpy() * 0.5 + 0.5
+
+        kar = np.empty((N * 2, 2), np.int32)
+        kar_n = export_lines(kar)
+        for i in range(kar_n):
+            a, b = kar[i]
+            gui.line(x_[a], x_[b])
+
+        gui.circles(x_, radius=2)
         gui.show()
