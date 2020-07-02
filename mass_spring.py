@@ -1,16 +1,18 @@
 import taichi as ti
 import taichi_glsl as tl
-from taichi_glsl import vec, vec2, math
 import numpy as np
+import math
 ti.init()
 
 
-dt = 0.1
-N = 3
+dt = 0.01
+n = 16
+N = n ** 2
+W = 1
+L = W / n
 beta = 0.5
 beta_dt = beta * dt
 alpha_dt = (1 - beta) * dt
-L = 1
 stiff = 100
 
 
@@ -29,15 +31,15 @@ def link(i, j, k):
 
 @ti.kernel
 def init():
-    link(0, 1, stiff)
-    link(0, 2, stiff)
-    link(1, 2, stiff)
-    ang = 0.0
-    x[0] = vec(ti.sin(ang), ti.cos(ang)) * L / math.sqrt(3) * 0.9
-    ang += math.tau / 3
-    x[1] = vec(ti.sin(ang), ti.cos(ang)) * L / math.sqrt(3) * 0.9
-    ang += math.tau / 3
-    x[2] = vec(ti.sin(ang), ti.cos(ang)) * L / math.sqrt(3) * 0.9
+    for i, j in ti.ndrange(n, n):
+        a = i * n + j
+        x[a] = ((tl.vec(i, j) + 0.5) * L - 0.5)
+    for i, j in ti.ndrange(n - 1, n - 1):
+        a = i * n + j
+        link(a, a + n, stiff)
+        link(a + n, a + n + 1, stiff)
+        link(a + n + 1, a + 1, stiff)
+        link(a + 1, a, stiff)
 
 @ti.kernel
 def explicit():
@@ -47,7 +49,8 @@ def explicit():
     '''
     for i, j in K:
         disp = x[j] - x[i]
-        acc = K[i, j] * disp * (tl.length(disp) - L) / L ** 2
+        d = disp.norm()
+        acc = K[i, j] * disp * (d - L) / L ** 2
         v[i] += dt * acc
     for i in x:
         x[i] += dt * v[i]
@@ -67,7 +70,7 @@ v' = v + Mdt @ [beta v' + alpha v]
 def Acc(v: ti.template(), x: ti.template(), dt):
     for i, j in K:
         disp = x[j] - x[i]
-        acc = K[i, j] * disp * (tl.length(disp) - L) / L ** 2
+        acc = K[i, j] * disp * (disp.norm() - L) / L ** 2
         v[i] += acc * dt
 
 @ti.kernel
@@ -83,8 +86,15 @@ def prepare():
 def jacobi():
     for i in v:
         b[i] = x[i] + F[i] * beta_dt ** 2
-        F[i] = vec2(0.0)
+        F[i] = [0.0, 0.0]
     Acc(F, b, 1)
+
+@ti.kernel
+def collide():
+    for i in x:
+        v[i].y -= 0.01 * dt
+    for i in x:
+        v[i] = tl.boundReflect(b[i], v[i], -1, 1)
 
 @ti.kernel
 def update_pos():
@@ -92,12 +102,12 @@ def update_pos():
         x[i] = b[i]
         v[i] += F[i] * beta_dt
 
-
 def implicit():
     prepare()
     for i in range(12):
         jacobi()
     update_pos()
+    collide()
 
 @ti.kernel
 def export_lines(out: ti.ext_arr()) -> ti.i32:
@@ -113,28 +123,17 @@ def export_lines(out: ti.ext_arr()) -> ti.i32:
 init()
 with ti.GUI('Mass Spring') as gui:
     while gui.running and not gui.get_event(gui.ESCAPE):
-        if gui.is_pressed(gui.LMB) or gui.is_pressed(gui.RMB):
-            mx, my = gui.get_cursor_pos()
-            i = int(mx * N)
-            gui.rect((i / N, 0), ((i + 1) / N, 1), color=0x666666)
-            if gui.is_pressed(gui.LMB):
-                x[i].y = (my * 2 - 1) * 3
-            else:
-                v[i].y = (my * 2 - 1) * 3
-        if gui.is_pressed('r'):
-            x.fill(0)
-            v.fill(0)
-
         if not gui.is_pressed(gui.SPACE):
             implicit()
 
         x_ = x.to_numpy() * 0.5 + 0.5
 
-        kar = np.empty((N * 2, 2), np.int32)
-        kar_n = export_lines(kar)
-        for i in range(kar_n):
-            a, b = kar[i]
-            gui.line(x_[a], x_[b])
+        if 1:
+            kar = np.empty((N * 2, 2), np.int32)
+            kar_n = export_lines(kar)
+            for i in range(kar_n):
+                a, b = kar[i]
+                gui.line(x_[a], x_[b])
 
         gui.circles(x_, radius=2)
         gui.show()
