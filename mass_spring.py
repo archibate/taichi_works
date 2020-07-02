@@ -5,7 +5,6 @@ import numpy as np
 import math
 ti.init()
 
-
 dt = 0.0005
 N = 128
 NN = N, N
@@ -16,7 +15,6 @@ beta_dt = beta * dt
 alpha_dt = (1 - beta) * dt
 stiff = 8000
 damp = 1.6
-
 
 x = ti.Vector(3, ti.f32, NN)
 v = ti.Vector(3, ti.f32, NN)
@@ -29,15 +27,18 @@ def init():
     for i in ti.grouped(x):
         x[i] = tl.vec((i + 0.5) * L + tl.vec(-0.5, 0.0), 0)
 
+
 @ti.kernel
 def e_accel():
     Acc(v, x, dt)
+
 
 @ti.kernel
 def e_update():
     for i in ti.grouped(x):
         v[i] *= math.exp(dt * -damp)
         x[i] += dt * v[i]
+
 
 def explicit():
     '''
@@ -48,18 +49,19 @@ def explicit():
     collide(x, v)
     e_update()
 
+
 #############################################
 '''
 v' = v + Mdt @ v'
 (I - Mdt) @ v' = v
 '''
-
 '''
 v' = v + Mdt @ [beta v' + alpha v]
 (I - beta Mdt) @ v' = (I + alpha Mdt) @ v
 '''
 
 links = [tl.vec(*_) for _ in [(-1, 0), (1, 0), (0, -1), (0, 1)]]
+
 
 @ti.func
 def Acc(v: ti.template(), x: ti.template(), dt):
@@ -74,6 +76,7 @@ def Acc(v: ti.template(), x: ti.template(), dt):
         v[i] += stiff * acc * dt
         v[i] *= ti.exp(-damp * dt)
 
+
 @ti.kernel
 def prepare():
     if ti.static(beta != 1):
@@ -84,12 +87,14 @@ def prepare():
         b[i] = x[i]
         x[i] += v[i] * beta_dt
 
+
 @ti.kernel
 def jacobi():
     for i in ti.grouped(x):
         b[i] = x[i] + F[i] * beta_dt**2
         F[i] = b[i] * 0
     Acc(F, b, 1)
+
 
 @ti.func
 def ballBoundReflect(pos, vel, center, radius):
@@ -102,6 +107,7 @@ def ballBoundReflect(pos, vel, center, radius):
             ret -= NoV * normal
     return ret
 
+
 @ti.kernel
 def collide(x: ti.template(), v: ti.template()):
     for i in ti.grouped(x):
@@ -111,11 +117,13 @@ def collide(x: ti.template(), v: ti.template()):
     for i in ti.grouped(x):
         v[i] = ballBoundReflect(x[i], v[i], tl.vec(+0.0, -0.4, -0.2), 0.4)
 
+
 @ti.kernel
 def update_pos():
     for i in ti.grouped(x):
         x[i] = b[i]
         v[i] += F[i] * beta_dt
+
 
 def implicit():
     prepare()
@@ -136,6 +144,7 @@ model.set_vertices(vertices)
 model.add_geometry(faces)
 #model.add_geometry(lines)
 
+
 @ti.kernel
 def init_display():
     for i_ in ti.grouped(ti.ndrange(N - 1, N - 1)):
@@ -154,6 +163,7 @@ def init_display():
         faces[a * 4 + 3].idx = tl.vec(b, d, c)
         #lines[a * 2 + 0].idx = tl.vec(a, b)
         #lines[a * 2 + 1].idx = tl.vec(a, d)
+
 
 @ti.kernel
 def update_display():
