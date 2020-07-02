@@ -3,15 +3,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 ti.init()
 
-dt = 0.1
-totime = 10
+dt = 0.6
+totime = 15
 steps = int(totime / dt)
 k = 0.5
 
 pos = ti.var(ti.f32, 2)
 vel = ti.var(ti.f32, 2)
 ######################
-
 
 @ti.kernel
 def ode20():
@@ -79,7 +78,6 @@ def ode22():
     pos[1], vel[1] = nx2, nv2
 
 
-
 ######################
 plt.subplots()[0].canvas.mpl_connect('key_press_event',
                     lambda e: e.key != 'escape' or plt.close())
@@ -144,5 +142,7 @@ plt.plot(X1, X2, label='semi-implicit')
 plt.xlabel('x1')
 plt.ylabel('x2')
 plt.title(f'dt = {dt}')
+plt.xlim(-1, 9)
+plt.ylim(-1, 9)
 plt.legend()
 plt.show()
