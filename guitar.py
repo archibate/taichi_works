@@ -3,8 +3,10 @@ import taichi_glsl as tl
 ti.init()
 
 
-dt = 0.05
+dt = 0.04
 N = 32
+beta = 0.5
+alpha = 1 - beta
 
 
 x = ti.var(ti.f32, N)
@@ -12,6 +14,7 @@ y = ti.var(ti.f32, N)
 v = ti.var(ti.f32, N)
 u = ti.var(ti.f32, N)
 A = ti.var(ti.f32, (N, N))
+D = ti.var(ti.f32, N)
 K = ti.var(ti.f32)
 ti.root.bitmasked(ti.ij, N).place(K)
 
@@ -19,8 +22,10 @@ ti.root.bitmasked(ti.ij, N).place(K)
 @ti.kernel
 def init():
     for i in range(1, N):
-        K[i - 1, i] = 1
-        K[i, i - 1] = 1
+        K[i - 1, i] = 100
+        K[i, i - 1] = 100
+    for i in range(N):
+        D[i] = 100
 
 @ti.kernel
 def explicit():
@@ -29,7 +34,8 @@ def explicit():
     x' = x + v'dt
     '''
     for i, j in K:
-        v[i] += dt * K[i, j] * (x[j] - x[i])
+        acc = K[i, j] * (x[j] - x[i]) - D[i] * x[i]
+        v[i] += dt * acc
     for i in x:
         x[i] += dt * v[i]
 
@@ -39,19 +45,24 @@ v' = v + Mdt @ v'
 (I - Mdt) @ v' = v
 '''
 
+'''
+v' = v + Mdt @ [beta v' + alpha v]
+(I - beta Mdt) @ v' = (I - alpha Mdt) @ v
+'''
+
 @ti.kernel
 def init_A():
     '''
     #dv sx
     M[i, j] = K[i, j]
-    M[i, i] = -sum(K[i, j] for j)
-    A[i, j] = -M[i, j] * dt
+    M[i, i] = -sum(K[i, j] for j) - D[i]
+    A[i, j] = M[i, j] * dt
     '''
     for i, j in A:
         A[i, j] = 0
     for i, j in K:
-        A[i, j] = -K[i, j] * dt
-        A[i, i] += K[i, j] * dt
+        A[i, j] = K[i, j] * dt
+        A[i, i] -= (K[i, j] + D[i]) * dt
     for i in x:
         y[i] = x[i]
         u[i] = v[i]
@@ -61,7 +72,7 @@ def step_A():
     for i in v:
         u[i] = v[i]
         for j in range(N):
-            u[i] += -A[i, j] * y[j]
+            u[i] += A[i, j] * y[j]
         y[i] = u[i] * dt + x[i]
 
 @ti.kernel
@@ -73,7 +84,7 @@ def update_x():
 
 def implicit():
     init_A()
-    for i in range(200):
+    for i in range(400):
         step_A()
     update_x()
 
