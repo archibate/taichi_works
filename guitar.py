@@ -3,9 +3,9 @@ import taichi_glsl as tl
 ti.init()
 
 
-dt = 0.05
+dt = 0.07
 N = 256
-beta = 0.5
+beta = 0.3
 alpha = 1 - beta
 
 
@@ -71,7 +71,7 @@ def prepare():
         v[i] += A[i, j] * x[j] * alpha * dt
     for i in x:
         b[i] = x[i]
-        x[i] = x[i] + v[i] * beta * dt
+        x[i] += v[i] * beta * dt
 
 @ti.kernel
 def jacobi():
