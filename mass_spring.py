@@ -5,7 +5,7 @@ import numpy as np
 import math
 ti.init()
 
-dt = 0.0005
+dt = 1e-2
 N = 128
 NN = N, N
 W = 1
@@ -13,8 +13,8 @@ L = W / N
 beta = 0.5
 beta_dt = beta * dt
 alpha_dt = (1 - beta) * dt
-stiff = 8000
-damp = 1.6
+stiff = 40
+damp = 2.6
 
 x = ti.Vector(3, ti.f32, NN)
 v = ti.Vector(3, ti.f32, NN)
@@ -127,7 +127,7 @@ def update_pos():
 
 def implicit():
     prepare()
-    for i in range(45):
+    for i in range(15):
         jacobi()
     collide(b, v)
     update_pos()
@@ -177,8 +177,8 @@ scene.set_light_dir([-1, 1, -1])
 with ti.GUI('Mass Spring') as gui:
     while gui.running and not gui.get_event(gui.ESCAPE):
         if not gui.is_pressed(gui.SPACE):
-            for i in range(15):
-                explicit()
+            for i in range(5):
+                implicit()
             update_display()
 
         scene.camera.from_mouse(gui)
