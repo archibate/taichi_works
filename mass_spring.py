@@ -48,8 +48,7 @@ def explicit():
     '''
     for i, j in K:
         disp = x[j] - x[i]
-        disp_len = tl.length(disp)
-        acc = K[i, j] * disp * (disp_len - L) / disp_len / L
+        acc = K[i, j] * disp * (tl.length(disp) - L) / L ** 2
         v[i] += dt * acc
     for i in x:
         x[i] += dt * v[i]
@@ -77,12 +76,18 @@ def init_A():
         A[i, j] = K[i, j]
         A[i, i] -= K[i, j]
 
+@ti.func
+def Acc(v: ti.template(), x: ti.template(), dt):
+    for i, j in K:
+        disp = x[j] - x[i]
+        acc = K[i, j] * disp * (tl.length(disp) - L) / L ** 2
+        v[i] += acc * dt
+
 @ti.kernel
 def prepare():
     for i in x:
         x[i] += v[i] * alpha_dt
-    for i, j in A:
-        v[i] += A[i, j] * x[j] * alpha_dt
+    Acc(v, x, alpha_dt)
     for i in x:
         b[i] = x[i]
         x[i] += v[i] * beta_dt
@@ -91,9 +96,8 @@ def prepare():
 def jacobi():
     for i in v:
         b[i] = x[i] + F[i] * beta_dt ** 2
-        F[i] = 0.0
-    for i, j in A:
-        F[i] += A[i, j] * b[j]
+        F[i] = tl.vec2(0.0)
+    Acc(F, b, 1)
 
 @ti.kernel
 def update_pos():
@@ -112,7 +116,6 @@ def implicit():
 def export_lines(out: ti.ext_arr()) -> ti.i32:
     n = 0
     for i, j in K:
-        print(i, j)
         if i < j:
             p = ti.atomic_add(n, 1)
             out[p, 0] = i
@@ -137,7 +140,7 @@ with ti.GUI('Mass Spring') as gui:
             v.fill(0)
 
         if not gui.is_pressed(gui.SPACE):
-            explicit()
+            implicit()
 
         x_ = x.to_numpy() * 0.5 + 0.5
 
