@@ -1,5 +1,6 @@
 import taichi as ti
 import taichi_glsl as tl
+from taichi_glsl import vec, vec2
 import numpy as np
 ti.init()
 
@@ -9,6 +10,7 @@ N = 3
 beta = 0.3
 beta_dt = beta * dt
 alpha_dt = (1 - beta) * dt
+L = 1
 
 
 x = ti.Vector(2, ti.f32, N)
@@ -32,11 +34,11 @@ def init():
     link(0, 2, 1.0)
     link(1, 2, 1.0)
     ang = 0.0
-    x[0] = [ti.sin(ang), ti.cos(ang)]
+    x[0] = tl.vec(ti.sin(ang), ti.cos(ang)) * L / ti.math.sqrt(3) * 0.9
     ang += ti.math.tau / 3
-    x[1] = [ti.sin(ang), ti.cos(ang)]
+    x[1] = tl.vec(ti.sin(ang), ti.cos(ang)) * L / ti.math.sqrt(3) * 0.9
     ang += ti.math.tau / 3
-    x[2] = [ti.sin(ang), ti.cos(ang)]
+    x[2] = tl.vec(ti.sin(ang), ti.cos(ang)) * L / ti.math.sqrt(3) * 0.9
 
 @ti.kernel
 def explicit():
@@ -45,7 +47,9 @@ def explicit():
     x' = x + v'dt
     '''
     for i, j in K:
-        acc = K[i, j] * (x[j] - x[i])
+        disp = x[j] - x[i]
+        disp_len = tl.length(disp)
+        acc = K[i, j] * disp * (disp_len - L) / disp_len / L
         v[i] += dt * acc
     for i in x:
         x[i] += dt * v[i]
