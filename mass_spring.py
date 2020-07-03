@@ -190,5 +190,6 @@ with ti.GUI('Mass Spring') as gui:
 
         scene.render()
         gui.set_image(scene.img)
-        gui.show()#f'/tmp/{gui.frame:06d}.png')
+        #gui.show(f'/tmp/{gui.frame:06d}.png')
+        gui.show()
         gui.frame += 1
