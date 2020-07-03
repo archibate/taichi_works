@@ -158,8 +158,8 @@ def init_display():
         i.x -= 1
         d = i.dot(tl.vec(N, 1))
         i.y -= 1
-        faces[a * 2 + 0].idx = tl.vec(a, b, c)
-        faces[a * 2 + 1].idx = tl.vec(a, c, d)
+        faces[a * 2 + 0].idx = tl.vec(a, c, b)
+        faces[a * 2 + 1].idx = tl.vec(a, d, c)
         #faces[a * 4 + 2].idx = tl.vec(b, a, d)
         #faces[a * 4 + 3].idx = tl.vec(b, d, c)
         #lines[a * 2 + 0].idx = tl.vec(a, b)
@@ -174,7 +174,7 @@ def update_display():
 
 init()
 init_display()
-scene.set_light_dir([-1, 1, -1])
+scene.set_light_dir([0.4, -1.5, -1.8])
 print('[Hint] mouse drag to orbit camera')
 with ti.GUI('Mass Spring') as gui:
     gui.frame = 0
@@ -186,7 +186,7 @@ with ti.GUI('Mass Spring') as gui:
         if gui.is_pressed(gui.LMB):
             scene.camera.from_mouse(gui)
         else:
-            scene.camera.from_mouse([0.5, 0.6])
+            scene.camera.from_mouse([0.5, 0.4])
 
         scene.render()
         gui.set_image(scene.img)
