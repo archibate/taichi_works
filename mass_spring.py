@@ -177,6 +177,7 @@ init_display()
 scene.set_light_dir([-1, 1, -1])
 print('[Hint] mouse drag to orbit camera')
 with ti.GUI('Mass Spring') as gui:
+    gui.frame = 0
     while gui.running and not gui.get_event(gui.ESCAPE):
         if not gui.is_pressed(gui.SPACE):
             for i in range(5):
@@ -189,4 +190,5 @@ with ti.GUI('Mass Spring') as gui:
 
         scene.render()
         gui.set_image(scene.img)
-        gui.show()
+        gui.show()#f'/tmp/{gui.frame:06d}.png')
+        gui.frame += 1
