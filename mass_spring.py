@@ -5,7 +5,7 @@ import numpy as np
 import math
 ti.init()
 
-dt = 1e-2
+dt = 8e-3
 N = 128
 NN = N, N
 W = 1
@@ -13,7 +13,8 @@ L = W / N
 beta = 0.5
 beta_dt = beta * dt
 alpha_dt = (1 - beta) * dt
-stiff = 40
+gravity = 0.4
+stiff = 20
 damp = 2.6
 
 x = ti.Vector(3, ti.f32, NN)
@@ -25,7 +26,7 @@ F = ti.Vector(3, ti.f32, NN)
 @ti.kernel
 def init():
     for i in ti.grouped(x):
-        x[i] = tl.vec((i + 0.5) * L + tl.vec(-0.5, 0.0), 0)
+        x[i] = tl.vec((i + 0.5) * L - 0.5, 0.8).xzy
 
 
 @ti.kernel
@@ -102,7 +103,7 @@ def ballBoundReflect(pos, vel, center, radius):
     above = tl.distance(pos, center) - radius
     if above <= 0:
         normal = tl.normalize(pos - center)
-        NoV = tl.dot(vel, normal)
+        NoV = tl.dot(vel, normal) - 6 * tl.smoothstep(above, 0, -0.1)
         if NoV < 0:
             ret -= NoV * normal
     return ret
@@ -111,11 +112,11 @@ def ballBoundReflect(pos, vel, center, radius):
 @ti.kernel
 def collide(x: ti.template(), v: ti.template()):
     for i in ti.grouped(x):
-        v[i].y -= 0.98 * dt
+        v[i].y -= gravity * dt
     #for i in ti.grouped(x):
     #    v[i] = tl.boundReflect(x[i], v[i], -1, 1)
     for i in ti.grouped(x):
-        v[i] = ballBoundReflect(x[i], v[i], tl.vec(+0.0, -0.4, -0.2), 0.4)
+        v[i] = ballBoundReflect(x[i], v[i], tl.vec(+0.0, +0.2, -0.0), 0.4)
 
 
 @ti.kernel
@@ -137,7 +138,7 @@ scene = t3.Scene()
 model = t3.Model()
 scene.add_model(model)
 
-faces = t3.Face.var(N**2 * 4)
+faces = t3.Face.var(N**2 * 2)
 #lines = t3.Line.var(N**2 * 2)
 vertices = t3.Vertex.var(N**2)
 model.set_vertices(vertices)
@@ -157,10 +158,10 @@ def init_display():
         i.x -= 1
         d = i.dot(tl.vec(N, 1))
         i.y -= 1
-        faces[a * 4 + 0].idx = tl.vec(a, b, c)
-        faces[a * 4 + 1].idx = tl.vec(a, c, d)
-        faces[a * 4 + 2].idx = tl.vec(b, a, d)
-        faces[a * 4 + 3].idx = tl.vec(b, d, c)
+        faces[a * 2 + 0].idx = tl.vec(a, b, c)
+        faces[a * 2 + 1].idx = tl.vec(a, c, d)
+        #faces[a * 4 + 2].idx = tl.vec(b, a, d)
+        #faces[a * 4 + 3].idx = tl.vec(b, d, c)
         #lines[a * 2 + 0].idx = tl.vec(a, b)
         #lines[a * 2 + 1].idx = tl.vec(a, d)
 
@@ -174,14 +175,18 @@ def update_display():
 init()
 init_display()
 scene.set_light_dir([-1, 1, -1])
+print('[Hint] mouse drag to orbit camera')
 with ti.GUI('Mass Spring') as gui:
     while gui.running and not gui.get_event(gui.ESCAPE):
         if not gui.is_pressed(gui.SPACE):
             for i in range(5):
                 implicit()
             update_display()
+        if gui.is_pressed(gui.LMB):
+            scene.camera.from_mouse(gui)
+        else:
+            scene.camera.from_mouse([0.5, 0.6])
 
-        scene.camera.from_mouse(gui)
         scene.render()
         gui.set_image(scene.img)
         gui.show()
