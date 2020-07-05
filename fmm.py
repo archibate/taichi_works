@@ -12,14 +12,15 @@ def rgb_to_hex(c):
     return 65536 * to255(c[0]) + 256 * to255(c[1]) + to255(c[2])
 
 N = 2
+M = 3
 dt = 0.00001
 steps = 0
 cmap = cm.get_cmap('magma')
-vor = ti.var(ti.f32, N)
-pos = ti.Vector(2, ti.f32, N)
-com = ti.Vector(2, ti.f32, N)
-vo0 = ti.var(ti.f32, N)
-vo1 = ti.Vector(2, ti.f32, N)
+p_vor = ti.var(ti.f32, N)
+p_pos = ti.Vector(2, ti.f32, N)
+g_com = ti.Vector(2, ti.f32, M)
+g_vo0 = ti.var(ti.f32, M)
+g_vo1 = ti.Vector(2, ti.f32, M)
 img = ti.Vector(3, ti.f32, (512, 512))
 eps = 1e-5
 
@@ -44,53 +45,46 @@ def compute(d, m0, m1):
 def velocity(p):
     vel = vec2(0.0)
     for j in range(N):
-        vel += compute(p - pos[j], vor[j], vec2(0.0))
+        vel += compute(p - p_pos[j], p_vor[j], vec2(0.0))
     return vel
 
 
 @ti.func
-def velocity_fast(p):
+def velocity_fmm(p):
     vel = vec2(0.0)
     for j in range(N):
-        vel += compute(p - pos[j], vo0[j], vo1[j])
+        vel += compute(p - p_pos[j], g_vo0[j], g_vo1[j])
     return vel
-
-
-@ti.kernel
-def advance():
-    for i in pos:
-        vel = velocity(pos[i])
-        pos[i] = pos[i] + vel * dt
 
 
 @ti.kernel
 def init():
-    pos[0] = vec(0.499, 0.50)
-    pos[1] = vec(0.501, 0.50)
-    vor[0] = +500.0
-    vor[1] = -500.0
+    p_pos[0] = vec(0.499, 0.50)
+    p_pos[1] = vec(0.501, 0.50)
+    p_vor[0] = +500.0
+    p_vor[1] = -500.0
 
 
 @ti.func
-def build():
-    com[0] = calc_com()
-    vo0[0] = calc_m0(com[0])
-    vo1[0] = calc_m1(com[0])
+def build_fmm():
+    g_com[0] = calc_com()
+    g_vo0[0] = calc_m0(g_com[0])
+    g_vo1[0] = calc_m1(g_com[0])
 
 
 @ti.func
-def calc_m1(com):
+def calc_m1(g_com):
     mu1 = vec2(0.0)
-    for i in pos:
-        mu1 += -0.5 * vor[i] * crcp(pos[i]).Yx
+    for i in p_pos:
+        mu1 += -0.5 * p_vor[i] * crcp(p_pos[i]).Yx
     return mu1
 
 
 @ti.func
-def calc_m0(com):
+def calc_m0(g_com):
     mu0 = 0.0
-    for i in pos:
-        mu0 += vor[i]
+    for i in p_pos:
+        mu0 += p_vor[i]
     return mu0
 
 
@@ -98,20 +92,10 @@ def calc_m0(com):
 def calc_com():
     cen = vec2(0.0)
     tot = 0
-    for i in pos:
-        cen += pos[i]
-        tot += vor[i]
+    for i in p_pos:
+        cen += p_pos[i]
+        tot += p_vor[i]
     return cen / tot
-
-
-@ti.kernel
-def energy():
-    eng = 0.0
-    for i, j in ti.ndrange(N, N):
-        if i == j: continue
-        d = pos[i] - pos[j]
-        eng += vor[i] * vor[j] * ti.log(d.norm())
-    print(eng)
 
 
 @ti.kernel
@@ -123,8 +107,8 @@ def render(mx: ti.f32, my: ti.f32):
         dir = dir.normalized()
     tl.paintArrow(img, mouse, dir, D.xyy)
 
-    build()
-    dir = velocity_fast(mouse) * 0.001
+    build_fmm()
+    dir = velocity_fmm(mouse) * 0.001
     if dir.norm() > 1:
         dir = dir.normalized()
     tl.paintArrow(img, mouse, dir, D.yyx)
@@ -139,10 +123,8 @@ with ti.GUI('Vortices', background_color=rgb_to_hex(cmap(0))) as gui:
             advance()
         img.fill(0.0)
         render(*gui.get_cursor_pos())
-        if gui.frame % 100 == 1:
-            energy()
-        colors = rgb_to_hex(cmap(np.abs(vor.to_numpy())).transpose())
+        colors = rgb_to_hex(cmap(np.abs(p_vor.to_numpy())).transpose())
         gui.set_image(img)
-        gui.circles(pos.to_numpy(), radius=2, color=colors)
+        gui.circles(p_pos.to_numpy(), radius=2, color=colors)
         gui.show()
         gui.frame += 1
