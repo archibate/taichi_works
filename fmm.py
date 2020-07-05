@@ -11,10 +11,10 @@ def rgb_to_hex(c):
     to255 = lambda x: np.minimum(255, np.maximum(0, np.int32(x * 255)))
     return 65536 * to255(c[0]) + 256 * to255(c[1]) + to255(c[2])
 
-N = 2
-M = 1
+N = 128
+M = 32
 dt = 0.00001
-steps = 0
+steps = 10
 cmap = cm.get_cmap('magma')
 p_vor = ti.var(ti.f32, N)
 p_pos = ti.Vector(2, ti.f32, N)
@@ -53,17 +53,40 @@ def velocity(p):
 @ti.func
 def velocity_fmm(p):
     vel = vec2(0.0)
-    for g in ti.grouped(g_com):
+    #for g in ti.grouped(g_com):
+    for g in ti.grouped(ti.ndrange(M, M)):
         vel += compute(p - g_com[g], g_vo0[g], g_vo1[g])
     return vel
 
 
 @ti.kernel
+def advance():
+    for i in p_pos:
+        vel = velocity(p_pos[i])
+        p_pos[i] = p_pos[i] + vel * dt
+
+
+@ti.kernel
+def advance_fmm():
+    build_fmm()
+    for i in p_pos:
+        vel = velocity_fmm(p_pos[i])
+        p_pos[i] = p_pos[i] + vel * dt
+
+
+@ti.kernel
 def init():
-    p_pos[0] = vec(0.499, 0.50)
-    p_pos[1] = vec(0.501, 0.50)
+    p_pos[0] = vec(0.489, 0.49)
+    p_pos[1] = vec(0.491, 0.49)
     p_vor[0] = +500.0
     p_vor[1] = -500.0
+
+
+@ti.kernel
+def init():
+    for i in range(N):
+        p_pos[i] = tl.randND(2)
+        p_vor[i] = tl.randRange(-1.0, 1.0)
 
 
 @ti.func
@@ -75,10 +98,14 @@ def build_fmm():
         g_cnt[g] = 0
     for i in p_pos:
         g = int(p_pos[i] * M)
+        g_com[g] += p_pos[i]
         g_vo0[g] += p_vor[i]
         g_cnt[g] += 1
     for g in ti.grouped(g_com):
-        g_com[g] = (g + 0.5) / M
+        if g_cnt[g] != 0:
+            g_com[g] = g_com[g] / g_cnt[g]
+        else:
+            g_com[g] = (g + 0.5) / M
     for i in p_pos:
         g = int(p_pos[i] * M)
         g_vo1[g] += p_vor[i] * (g_com[g] - p_pos[i]).Yx
@@ -106,7 +133,7 @@ with ti.GUI('Vortices', background_color=rgb_to_hex(cmap(0))) as gui:
     gui.frame = 0
     while gui.running and not gui.get_event(gui.ESCAPE):
         for i in range(steps):
-            advance()
+            advance_fmm()
         img.fill(0.0)
         render(*gui.get_cursor_pos())
         colors = rgb_to_hex(cmap(np.abs(p_vor.to_numpy())).transpose())
