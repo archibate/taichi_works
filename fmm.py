@@ -27,11 +27,14 @@ def cmul(a, b):
     return vec(a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x)
 
 @ti.func
+def crcp(a):
+    return tl.normalizePow(a, -1, eps).Yx
+
+@ti.func
 def compute(d, m0, m1):
-    d = tl.normalizePow(d, -1, eps)
-    r = d.Yx * m0
-    d2 = cmul(d, d)
-    r += cmul(d2.Yx, m1)
+    d = crcp(d)
+    r = d * m0
+    r += cmul(cmul(d, d), m1)
     return r
 
 
@@ -57,7 +60,24 @@ def init():
     vor[0] = +50000.0
     vor[1] = -50000.0
     pos[2] = vec(0.50, 0.50)
-    vo1[2] = vec(+1.0, +0.0)
+    vo1[2] = vec(+0.0, -1.0)
+
+
+@ti.kernel
+def calc_m1():
+    mu1 = vec2(0.0)
+    for i in pos:
+        mu1 += -0.5 * vor[i] * crcp(pos[i]).Yx
+        mu1 += vo1[i]
+    print(mu1)
+
+
+@ti.kernel
+def calc_m0():
+    mu0 = vec2(0.0)
+    for i in pos:
+        mu0 += vor[i]
+    return mu0
 
 
 @ti.kernel
@@ -88,7 +108,9 @@ with ti.GUI('Vortices', background_color=rgb_to_hex(cmap(0))) as gui:
             advance()
         img.fill(0.0)
         render(*gui.get_cursor_pos())
-        if gui.frame % 100 == 1: energy()
+        if gui.frame % 100 == 1:
+            energy()
+            calc_m1()
         colors = rgb_to_hex(cmap(np.abs(vor.to_numpy())).transpose())
         gui.set_image(img)
         gui.circles(pos.to_numpy(), radius=2, color=colors)
