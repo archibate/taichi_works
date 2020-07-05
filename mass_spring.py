@@ -3,7 +3,7 @@ import taichi_glsl as tl
 import taichi_three as t3
 import numpy as np
 import math
-ti.init()
+ti.init(ti.gpu)
 
 dt = 8e-3
 N = 128
