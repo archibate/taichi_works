@@ -12,15 +12,16 @@ def rgb_to_hex(c):
     return 65536 * to255(c[0]) + 256 * to255(c[1]) + to255(c[2])
 
 N = 2
-M = 3
+M = 1
 dt = 0.00001
 steps = 0
 cmap = cm.get_cmap('magma')
 p_vor = ti.var(ti.f32, N)
 p_pos = ti.Vector(2, ti.f32, N)
-g_com = ti.Vector(2, ti.f32, M)
-g_vo0 = ti.var(ti.f32, M)
-g_vo1 = ti.Vector(2, ti.f32, M)
+g_com = ti.Vector(2, ti.f32, (M, M))
+g_vo0 = ti.var(ti.f32, (M, M))
+g_vo1 = ti.Vector(2, ti.f32, (M, M))
+g_cnt = ti.var(ti.i32, (M, M))
 img = ti.Vector(3, ti.f32, (512, 512))
 eps = 1e-5
 
@@ -52,8 +53,8 @@ def velocity(p):
 @ti.func
 def velocity_fmm(p):
     vel = vec2(0.0)
-    for j in range(N):
-        vel += compute(p - p_pos[j], g_vo0[j], g_vo1[j])
+    for g in ti.grouped(g_com):
+        vel += compute(p - g_com[g], g_vo0[g], g_vo1[g])
     return vel
 
 
@@ -67,35 +68,20 @@ def init():
 
 @ti.func
 def build_fmm():
-    g_com[0] = calc_com()
-    g_vo0[0] = calc_m0(g_com[0])
-    g_vo1[0] = calc_m1(g_com[0])
-
-
-@ti.func
-def calc_m1(g_com):
-    mu1 = vec2(0.0)
+    for g in ti.grouped(g_com):
+        g_vo0[g] = 0.0
+        g_vo1[g] = vec2(0.0)
+        g_com[g] = vec2(0.0)
+        g_cnt[g] = 0
     for i in p_pos:
-        mu1 += -0.5 * p_vor[i] * crcp(p_pos[i]).Yx
-    return mu1
-
-
-@ti.func
-def calc_m0(g_com):
-    mu0 = 0.0
+        g = int(p_pos[i] * M)
+        g_vo0[g] += p_vor[i]
+        g_cnt[g] += 1
+    for g in ti.grouped(g_com):
+        g_com[g] = (g + 0.5) / M
     for i in p_pos:
-        mu0 += p_vor[i]
-    return mu0
-
-
-@ti.func
-def calc_com():
-    cen = vec2(0.0)
-    tot = 0
-    for i in p_pos:
-        cen += p_pos[i]
-        tot += p_vor[i]
-    return cen / tot
+        g = int(p_pos[i] * M)
+        g_vo1[g] += p_vor[i] * (g_com[g] - p_pos[i]).Yx
 
 
 @ti.kernel
