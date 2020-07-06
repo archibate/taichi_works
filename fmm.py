@@ -12,7 +12,8 @@ def rgb_to_hex(c):
     return 65536 * to255(c[0]) + 256 * to255(c[1]) + to255(c[2])
 
 N = 128
-M = 16
+M = 32
+M1 = 1
 PPC = 2 * (N // M)
 dt = 0.000002
 steps = 16
@@ -24,6 +25,9 @@ g_vo0 = ti.var(ti.f32, (M, M))
 g_vo1 = ti.Vector(2, ti.f32, (M, M))
 g_pas = ti.var(ti.i32, (M, M, PPC))
 g_cnt = ti.var(ti.i32, (M, M))
+h_com = ti.Vector(2, ti.f32, (M, M))
+h_vo0 = ti.var(ti.f32, (M1, M1))
+h_vo1 = ti.Vector(2, ti.f32, (M1, M1))
 img = ti.Vector(3, ti.f32, (512, 512))
 eps = 1e-5
 
@@ -40,7 +44,7 @@ def crcp(a):
 def compute(d, m0, m1):
     d = crcp(d)
     r = d * m0
-    r += cmul(cmul(d, d), m1)
+    r += cmul(d, d) * m1
     return r
 
 
@@ -54,7 +58,11 @@ def velocity(p):
 
 @ti.func
 def is_close(dp):
-    return dp.norm_sqr() < (4 / M) ** 2
+    return dp.norm_sqr() < (2 / M) ** 2
+
+@ti.func
+def is_close1(dp):
+    return dp.norm_sqr() < (2 / M1) ** 2
 
 @ti.func
 def velocity_fmm(p):
@@ -67,8 +75,14 @@ def velocity_fmm(p):
             for k in range(g_cnt[g]):
                 kk = g_pas[g, k]
                 vel += compute(p - p_pos[kk], p_vor[kk], vec2(0.0))
-        else:
+        elif is_close1(dp):
             vel += compute(dp, g_vo0[g], g_vo1[g])
+    for h in ti.grouped(ti.ndrange(M1, M1)):
+        dp = p - h_com[h]
+        if not is_close1(dp):
+            for hd in ti.grouped(ti.ndrange(M // M1, M // M1)):
+                h = g + hd
+                vel += compute(dp, h_vo0[h], h_vo1[h])
     return vel
 
 
@@ -82,6 +96,7 @@ def advance():
 @ti.kernel
 def advance_fmm():
     p2m()
+    #m2m1()
     for i in p_pos:
         vel = velocity_fmm(p_pos[i])
         p_pos[i] = p_pos[i] + vel * dt
@@ -89,17 +104,32 @@ def advance_fmm():
 
 @ti.kernel
 def init():
-    p_pos[0] = vec(0.489, 0.49)
-    p_pos[1] = vec(0.491, 0.49)
-    p_vor[0] = +500.0
-    p_vor[1] = -500.0
-
-
-@ti.kernel
-def init():
     for i in range(N):
-        p_pos[i] = tl.randNDRange(vec2(0.3), vec2(0.7))
+        p_pos[i] = tl.randNDRange(vec2(0.25), vec2(0.75))
         p_vor[i] = tl.randRange(0.0, 1.0)
+
+
+@ti.func
+def build_tree():
+    pass
+
+
+@ti.func
+def m2m1():
+    for h in ti.grouped(h_com):
+        h_vo0[h] = 0.0
+        h_vo1[h] = vec2(0.0)
+        h_com[h] = vec2(0.0)
+    for g in ti.grouped(g_com):
+        h = int(g_com[g] * M1)
+        h_com[h] += g_com[g]
+        h_vo0[h] += g_vo0[g]
+    for h in ti.grouped(h_com):
+        h_com[h] = h_com[h] / (M // M1)
+    for g in ti.grouped(g_com):
+        h = int(g_com[g] * M1)
+        h_vo1[h] += g_vo0[g] * (h_com[h] - g_com[g])
+        h_vo1[h] += g_vo1[g]
 
 
 @ti.func
@@ -122,7 +152,7 @@ def p2m():
             g_com[g] = (g + 0.5) / M
     for i in p_pos:
         g = int(p_pos[i] * M)
-        g_vo1[g] += p_vor[i] * (g_com[g] - p_pos[i]).Yx
+        g_vo1[g] += p_vor[i] * (g_com[g] - p_pos[i])
 
 
 @ti.kernel
