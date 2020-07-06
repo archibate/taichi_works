@@ -12,15 +12,17 @@ def rgb_to_hex(c):
     return 65536 * to255(c[0]) + 256 * to255(c[1]) + to255(c[2])
 
 N = 128
-M = 32
-dt = 0.00001
-steps = 10
+M = 16
+PPC = 2 * (N // M)
+dt = 0.000002
+steps = 16
 cmap = cm.get_cmap('magma')
 p_vor = ti.var(ti.f32, N)
 p_pos = ti.Vector(2, ti.f32, N)
 g_com = ti.Vector(2, ti.f32, (M, M))
 g_vo0 = ti.var(ti.f32, (M, M))
 g_vo1 = ti.Vector(2, ti.f32, (M, M))
+g_pas = ti.var(ti.i32, (M, M, PPC))
 g_cnt = ti.var(ti.i32, (M, M))
 img = ti.Vector(3, ti.f32, (512, 512))
 eps = 1e-5
@@ -51,11 +53,22 @@ def velocity(p):
 
 
 @ti.func
+def is_close(dp):
+    return dp.norm_sqr() < (4 / M) ** 2
+
+@ti.func
 def velocity_fmm(p):
     vel = vec2(0.0)
+    my_g = int(p * M)
     #for g in ti.grouped(g_com):
     for g in ti.grouped(ti.ndrange(M, M)):
-        vel += compute(p - g_com[g], g_vo0[g], g_vo1[g])
+        dp = p - g_com[g]
+        if is_close(dp):
+            for k in range(g_cnt[g]):
+                kk = g_pas[g, k]
+                vel += compute(p - p_pos[kk], p_vor[kk], vec2(0.0))
+        else:
+            vel += compute(dp, g_vo0[g], g_vo1[g])
     return vel
 
 
@@ -68,7 +81,7 @@ def advance():
 
 @ti.kernel
 def advance_fmm():
-    build_fmm()
+    p2m()
     for i in p_pos:
         vel = velocity_fmm(p_pos[i])
         p_pos[i] = p_pos[i] + vel * dt
@@ -85,12 +98,12 @@ def init():
 @ti.kernel
 def init():
     for i in range(N):
-        p_pos[i] = tl.randND(2)
-        p_vor[i] = tl.randRange(-1.0, 1.0)
+        p_pos[i] = tl.randNDRange(vec2(0.3), vec2(0.7))
+        p_vor[i] = tl.randRange(0.0, 1.0)
 
 
 @ti.func
-def build_fmm():
+def p2m():
     for g in ti.grouped(g_com):
         g_vo0[g] = 0.0
         g_vo1[g] = vec2(0.0)
@@ -100,7 +113,8 @@ def build_fmm():
         g = int(p_pos[i] * M)
         g_com[g] += p_pos[i]
         g_vo0[g] += p_vor[i]
-        g_cnt[g] += 1
+        k = ti.atomic_add(g_cnt[g], 1)
+        g_pas[g, k] = i
     for g in ti.grouped(g_com):
         if g_cnt[g] != 0:
             g_com[g] = g_com[g] / g_cnt[g]
@@ -115,16 +129,26 @@ def build_fmm():
 def render(mx: ti.f32, my: ti.f32):
     mouse = vec(mx, my)
 
-    dir = velocity(mouse) * 0.001
+    dir = velocity(mouse) * 0.002
     if dir.norm() > 1:
         dir = dir.normalized()
     tl.paintArrow(img, mouse, dir, D.xyy)
 
-    build_fmm()
-    dir = velocity_fmm(mouse) * 0.001
+    p2m()
+    dir = velocity_fmm(mouse) * 0.002
     if dir.norm() > 1:
         dir = dir.normalized()
     tl.paintArrow(img, mouse, dir, D.yyx)
+
+
+@ti.kernel
+def energy():
+    eng = 0.0
+    for i, j in ti.ndrange(N, N):
+        if i == j: continue
+        d = p_pos[i] - p_pos[j]
+        eng += p_vor[i] * p_vor[j] * ti.log(d.norm())
+    print(eng)
 
 
 
@@ -134,6 +158,8 @@ with ti.GUI('Vortices', background_color=rgb_to_hex(cmap(0))) as gui:
     while gui.running and not gui.get_event(gui.ESCAPE):
         for i in range(steps):
             advance_fmm()
+        if gui.frame % 100 == 0:
+            energy()
         img.fill(0.0)
         render(*gui.get_cursor_pos())
         colors = rgb_to_hex(cmap(np.abs(p_vor.to_numpy())).transpose())
