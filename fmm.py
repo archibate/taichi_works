@@ -13,7 +13,7 @@ def rgb_to_hex(c):
 
 N = 128
 M = 32
-M1 = 1
+M1 = 8
 PPC = 2 * (N // M)
 dt = 0.000002
 steps = 16
@@ -80,9 +80,7 @@ def velocity_fmm(p):
     for h in ti.grouped(ti.ndrange(M1, M1)):
         dp = p - h_com[h]
         if not is_close1(dp):
-            for hd in ti.grouped(ti.ndrange(M // M1, M // M1)):
-                h = g + hd
-                vel += compute(dp, h_vo0[h], h_vo1[h])
+            vel += compute(dp, h_vo0[h], h_vo1[h])
     return vel
 
 
@@ -96,7 +94,7 @@ def advance():
 @ti.kernel
 def advance_fmm():
     p2m()
-    #m2m1()
+    m2m1()
     for i in p_pos:
         vel = velocity_fmm(p_pos[i])
         p_pos[i] = p_pos[i] + vel * dt
@@ -125,7 +123,10 @@ def m2m1():
         h_com[h] += g_com[g]
         h_vo0[h] += g_vo0[g]
     for h in ti.grouped(h_com):
-        h_com[h] = h_com[h] / (M // M1)
+        if h_vo0[h] != 0.0:
+            h_com[h] = h_com[h] / h_vo0[h]
+        else:
+            h_com[h] = h_com[h] / (M // M1)
     for g in ti.grouped(g_com):
         h = int(g_com[g] * M1)
         h_vo1[h] += g_vo0[g] * (h_com[h] - g_com[g])
