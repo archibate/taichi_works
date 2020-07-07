@@ -15,8 +15,13 @@ particle_table.place(particle_pos).place(particle_vel).place(particle_mass)
 particle_table_len = ti.var(ti.i32, ())
 
 trash_particle_id = ti.var(ti.i32)
+trash_base_parent = ti.var(ti.i32)
+trash_base_geo_center = ti.Vector(2, ti.f32)
+trash_base_geo_size = ti.var(ti.f32)
 trash_table = ti.root.dense(ti.i, kMaxParticles)
 trash_table.place(trash_particle_id)
+trash_table.place(trash_base_parent, trash_base_geo_size)
+trash_table.place(trash_base_geo_center)
 trash_table_len = ti.var(ti.i32, ())
 
 node_mass = ti.var(ti.f32)
@@ -54,18 +59,14 @@ def alloc_particle():
 
 
 @ti.func
-def append_trash(particle_id):
+def alloc_trash():
     ret = ti.atomic_add(trash_table_len[None], 1)
     assert ret < kMaxParticles
-    trash_particle_id[ret] = particle_id
     return ret
 
 
 @ti.func
-def alloc_a_node_for_particle(particle_id):
-    parent = 0
-    parent_geo_center = particle_pos[0] * 0 + 0.5
-    parent_geo_size = 1.0
+def alloc_a_node_for_particle(particle_id, parent, parent_geo_center, parent_geo_size):
     position = particle_pos[particle_id]
     mass = particle_mass[particle_id]
     while 1:
@@ -74,7 +75,18 @@ def alloc_a_node_for_particle(particle_id):
             break
         if already_particle_id != TREE:
             node_particle_id[parent] = TREE
-            append_trash(already_particle_id)
+            trash_id = alloc_trash()
+            trash_particle_id[trash_id] = already_particle_id
+            trash_base_parent[trash_id] = parent
+            trash_base_geo_center[trash_id] = parent_geo_center
+            trash_base_geo_size[trash_id] = parent_geo_size
+            already_pos = particle_pos[already_particle_id]
+            already_mass = particle_mass[already_particle_id]
+            node_weighted_pos[parent] -= already_pos * already_mass
+            node_mass[parent] -= already_mass
+
+        node_weighted_pos[parent] += position * mass
+        node_mass[parent] += mass
 
         which_child = abs(position > parent_geo_center)
         child = node_children[parent, which_child]
@@ -110,11 +122,13 @@ def build_tree():
 
     particle_id = 0
     while particle_id < particle_table_len[None]:
-        alloc_a_node_for_particle(particle_id)
+        alloc_a_node_for_particle(particle_id, 0, particle_pos[0] * 0 + 0.5, 1.0)
 
         trash_id = 0
         while trash_id < trash_table_len[None]:
-            alloc_a_node_for_particle(trash_particle_id[trash_id])
+            alloc_a_node_for_particle(trash_particle_id[trash_id],
+                trash_base_parent[trash_id], trash_base_geo_center[trash_id],
+                trash_base_geo_size[trash_id])
             trash_id = trash_id + 1
 
         trash_table_len[None] = 0
