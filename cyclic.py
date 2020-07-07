@@ -1,4 +1,5 @@
 import taichi as ti
+import taichi_glsl as tl
 
 N = 8
 
@@ -17,7 +18,10 @@ def init():
 def show():
     for i in range(N):
         for j in range(N):
-            print(f'{m[i, j]:-8.2f}', end='')
+            if m[i, j] != 0:
+                print(f'{m[i, j]:-8.1f}', end='')
+            else:
+                print(f'      . ', end='')
         print('')
 
 
@@ -32,6 +36,22 @@ def cyclic():
 
     for i in ti.static(range(-2, 3)):
         m[3, 3 + i] += m[2, 3 + i] + m[4, 3 + i]
+
+
+@ti.kernel
+def cyclic():
+    i = 2
+    a = i
+    b, c = (i + tl.vec(1, 2)) % N
+    k = -m[b, a] / m[a, a]
+    for t in ti.static(range(-2, 3)):
+        m[a, a + t] *= k
+    k = -m[b, c] / m[c, c]
+    for t in ti.static(range(-2, 3)):
+        m[c, c + t] *= k
+
+    for t in ti.static(range(-2, 3)):
+        m[b, b + t] += m[a, b + t] + m[c, b + t]
 
 
 init()
