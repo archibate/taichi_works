@@ -94,14 +94,6 @@ def alloc_a_node_for_particle(particle_id):
 
 
 @ti.kernel
-def initialize():
-    node_table_len[None] = 0
-    trash_table_len[None] = 0
-    particle_table_len[None] = 0
-    alloc_node()
-
-
-@ti.kernel
 def add_particle_at(mx: ti.f32, my: ti.f32, mass: ti.f32):
     mouse_pos = tl.vec(mx, my)
 
@@ -161,7 +153,6 @@ def render_tree(gui, parent=0, parent_geo_center=tl.vec(0.5, 0.5), parent_geo_si
             render_tree(gui, child, child_geo_center, child_geo_size)
 
 
-initialize()
 gui = ti.GUI('Tree-code')
 while gui.running:
     for e in gui.get_events(gui.PRESS):
