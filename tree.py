@@ -28,6 +28,8 @@ node_table.place(node_mass, node_particle_id, node_weighted_pos)
 node_table.dense(ti.jk, 2).place(node_children)
 node_table_len = ti.var(ti.i32, ())
 
+display_image = ti.var(ti.f32, (512, 512))
+
 
 @ti.func
 def alloc_node():
@@ -89,12 +91,12 @@ def alloc_a_node_for_particle(particle_id):
 
     print(particle_id, parent)
     node_particle_id[parent] = particle_id
-    #node_weighted_pos[parent] = position * mass
-    #node_mass[parent] = mass
+    node_weighted_pos[parent] = position * mass
+    node_mass[parent] = mass
 
 
 @ti.kernel
-def init():
+def initialize():
     node_table_len[None] = 0
     trash_table_len[None] = 0
     particle_table_len[None] = 0
@@ -102,7 +104,7 @@ def init():
 
 
 @ti.kernel
-def touch(mx: ti.f32, my: ti.f32):
+def add_particle_at(mx: ti.f32, my: ti.f32):
     mouse_pos = tl.vec(mx, my)
 
     particle_id = alloc_particle()
@@ -118,7 +120,21 @@ def touch(mx: ti.f32, my: ti.f32):
     trash_table_len[None] = 0
 
 
-def render(gui, parent=0, parent_geo_center=tl.vec(0.5, 0.5), parent_geo_size=1.0):
+@ti.func
+def get_raw_gravity_at(pos):
+    acc = particle_pos[0] * 0
+    for i in particle_pos:
+        acc += tl.normalizePow(particle_pos[i] - pos, -2, 1e-4)
+    return acc
+
+
+@ti.kernel
+def render_arrows():
+    particle_id = max(0, particle_table_len[None] - 1)
+    get_raw_gravity_at(particle_pos[particle_id])
+
+
+def render_tree(gui, parent=0, parent_geo_center=tl.vec(0.5, 0.5), parent_geo_size=1.0):
     child_geo_size = parent_geo_size * 0.5
     if node_particle_id[parent] >= 0:
         tl = parent_geo_center - child_geo_size
@@ -131,17 +147,19 @@ def render(gui, parent=0, parent_geo_center=tl.vec(0.5, 0.5), parent_geo_size=1.
             br = parent_geo_center + which * child_geo_size
             child_geo_center = parent_geo_center + (which - 0.5) * child_geo_size
             gui.rect(tl, br, radius=1, color=0xff0000)
-            render(gui, child, child_geo_center, child_geo_size)
+            render_tree(gui, child, child_geo_center, child_geo_size)
 
 
-init()
+initialize()
 gui = ti.GUI('Tree-code')
 while gui.running:
     for e in gui.get_events(gui.PRESS):
         if e.key == gui.ESCAPE:
             gui.running = False
         elif e.key == gui.LMB:
-            touch(*gui.get_cursor_pos())
-    render(gui)
+            add_particle_at(*gui.get_cursor_pos())
+    render_arrows()
+    gui.set_image(display_image)
+    render_tree(gui)
     gui.circles(particle_pos.to_numpy()[:particle_table_len[None]], radius=3)
     gui.show()
