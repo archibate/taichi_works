@@ -28,7 +28,7 @@ node_table.place(node_mass, node_particle_id, node_weighted_pos)
 node_table.dense(ti.jk, 2).place(node_children)
 node_table_len = ti.var(ti.i32, ())
 
-display_image = ti.var(ti.f32, (512, 512))
+display_image = ti.Vector(3, ti.f32, (512, 512))
 
 
 @ti.func
@@ -104,11 +104,12 @@ def initialize():
 
 
 @ti.kernel
-def add_particle_at(mx: ti.f32, my: ti.f32):
+def add_particle_at(mx: ti.f32, my: ti.f32, mass: ti.f32):
     mouse_pos = tl.vec(mx, my)
 
     particle_id = alloc_particle()
     particle_pos[particle_id] = mouse_pos
+    particle_mass[particle_id] = mass
     alloc_a_node_for_particle(particle_id)
 
     trash_id = 0
@@ -124,14 +125,16 @@ def add_particle_at(mx: ti.f32, my: ti.f32):
 def get_raw_gravity_at(pos):
     acc = particle_pos[0] * 0
     for i in particle_pos:
-        acc += tl.normalizePow(particle_pos[i] - pos, -2, 1e-4)
+        acc += particle_mass[i] * tl.normalizePow(particle_pos[i] - pos, -2, 1e-3)
     return acc
 
 
 @ti.kernel
 def render_arrows():
     particle_id = max(0, particle_table_len[None] - 1)
-    get_raw_gravity_at(particle_pos[particle_id])
+    pos = particle_pos[particle_id]
+    acc = get_raw_gravity_at(pos) * 0.001
+    tl.paintArrow(display_image, pos, acc, tl.D.yxy)
 
 
 def render_tree(gui, parent=0, parent_geo_center=tl.vec(0.5, 0.5), parent_geo_size=1.0):
@@ -156,8 +159,9 @@ while gui.running:
     for e in gui.get_events(gui.PRESS):
         if e.key == gui.ESCAPE:
             gui.running = False
-        elif e.key == gui.LMB:
-            add_particle_at(*gui.get_cursor_pos())
+        elif e.key in [gui.LMB, gui.RMB]:
+            add_particle_at(*gui.get_cursor_pos(), e.key == gui.LMB)
+    display_image.fill(0)
     render_arrows()
     gui.set_image(display_image)
     render_tree(gui)
