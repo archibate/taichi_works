@@ -136,10 +136,53 @@ def build_tree():
 
 
 @ti.func
+def gravity_func(distance):
+    return tl.normalizePow(distance, -2, 1e-3)
+
+
+@ti.func
+def get_tree_gravity_at(position):
+    acc = particle_pos[0] * 0
+
+    trash_id = alloc_trash()
+    assert trash_id == 0
+    trash_base_parent[trash_id] = 0
+    trash_base_geo_size[trash_id] = 1.0
+
+    trash_id = 1
+    while trash_id < trash_table_len[None]:
+        parent = trash_base_parent[trash_id]
+        parent_geo_size = trash_base_geo_size[trash_id]
+
+        particle_id = node_particle_id[parent]
+        if particle_id >= 0:
+            distance = particle_pos[particle_id] - position
+            acc += particle_mass[particle_id] * gravity_func(distance)
+            break
+
+        else: # TREE or LEAF
+            for which in ti.grouped(ti.ndrange(2, 2)):
+                child = node_children[parent, which]
+                if child == LEAF:
+                    continue
+                node_center = node_weighted_pos[child] / node_mass[child]
+                distance = node_center - position
+                if distance.norm_sqr() > parent_geo_size:
+                    acc += node_mass[child] * gravity_func(distance)
+                else:
+                    new_trash_id = alloc_trash()
+                    child_geo_size = parent_geo_size * 0.5
+                    trash_base_parent[new_trash_id] = child
+                    trash_base_geo_size[new_trash_id] = child_geo_size
+
+    return acc
+
+
+@ti.func
 def get_raw_gravity_at(pos):
     acc = particle_pos[0] * 0
     for i in particle_pos:
-        acc += particle_mass[i] * tl.normalizePow(particle_pos[i] - pos, -2, 1e-3)
+        acc += particle_mass[i] * gravity_func(particle_pos[i] - pos)
     return acc
 
 
@@ -149,6 +192,8 @@ def render_arrows():
     pos = particle_pos[particle_id]
     acc = get_raw_gravity_at(pos) * 0.001
     tl.paintArrow(display_image, pos, acc, tl.D.yxy)
+    acc_tree = get_tree_gravity_at(pos) * 0.001
+    tl.paintArrow(display_image, pos, acc_tree, tl.D.yyx)
 
 
 def render_tree(gui, parent=0, parent_geo_center=tl.vec(0.5, 0.5), parent_geo_size=1.0):
