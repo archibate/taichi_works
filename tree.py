@@ -80,8 +80,8 @@ def alloc_a_node_for_particle(particle_id):
         if child == LEAF:
             child = alloc_node()
             node_children[parent, which_child] = child
-        child_geo_center = parent_geo_center + (which_child - 0.5) * parent_geo_size
         child_geo_size = parent_geo_size * 0.5
+        child_geo_center = parent_geo_center + (which_child - 0.5) * child_geo_size
 
         parent_geo_center = child_geo_center
         parent_geo_size = child_geo_size
