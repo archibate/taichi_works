@@ -3,6 +3,7 @@ import taichi_glsl as tl
 ti.init()
 
 LEAF = -1
+TREE = -2
 kMaxNodes = 512
 kMaxParticles = 256
 
@@ -69,8 +70,10 @@ def alloc_a_node_for_particle(particle_id):
         already_particle_id = node_particle_id[parent]
         if already_particle_id == LEAF:
             break
-        node_particle_id[parent] = LEAF
-        append_trash(already_particle_id)
+        if already_particle_id != TREE:
+            print(already_particle_id)
+            node_particle_id[parent] = TREE
+            append_trash(already_particle_id)
 
         which_child = abs(position > parent_geo_center)
         child = node_children[parent, which_child]
@@ -84,7 +87,7 @@ def alloc_a_node_for_particle(particle_id):
         parent_geo_size = child_geo_size
         parent = child
 
-    print(parent)
+    print(particle_id, parent)
     node_particle_id[parent] = particle_id
     #node_weighted_pos[parent] = position * mass
     #node_mass[parent] = mass
@@ -108,7 +111,7 @@ def touch(mx: ti.f32, my: ti.f32):
 
     trash_id = 0
     while trash_id < trash_table_len[None]:
-        print('tid', trash_id)
+        print('tid', trash_particle_id[trash_id])
         alloc_a_node_for_particle(trash_particle_id[trash_id])
         trash_id = trash_id + 1
 
@@ -117,13 +120,13 @@ def touch(mx: ti.f32, my: ti.f32):
 
 def render(gui, parent=0, parent_geo_center=tl.vec(0.5, 0.5), parent_geo_size=1.0):
     child_geo_size = parent_geo_size * 0.5
-    if node_particle_id[parent] != LEAF:
+    if node_particle_id[parent] >= 0:
         tl = parent_geo_center - child_geo_size
         br = parent_geo_center + child_geo_size
         gui.rect(tl, br, radius=1, color=0xff0000)
     for which in map(ti.Vector, [[0, 0], [0, 1], [1, 0], [1, 1]]):
         child = node_children[(parent, which[0], which[1])]
-        if child != LEAF:
+        if child >= 0:
             tl = parent_geo_center + (which - 1) * child_geo_size
             br = parent_geo_center + which * child_geo_size
             child_geo_center = parent_geo_center + (which - 0.5) * child_geo_size
@@ -140,4 +143,5 @@ while gui.running:
         elif e.key == gui.LMB:
             touch(*gui.get_cursor_pos())
     render(gui)
+    gui.circles(particle_pos.to_numpy()[:particle_table_len[None]], radius=3)
     gui.show()
