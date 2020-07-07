@@ -73,7 +73,6 @@ def alloc_a_node_for_particle(particle_id):
         if already_particle_id == LEAF:
             break
         if already_particle_id != TREE:
-            print(already_particle_id)
             node_particle_id[parent] = TREE
             append_trash(already_particle_id)
 
@@ -89,7 +88,6 @@ def alloc_a_node_for_particle(particle_id):
         parent_geo_size = child_geo_size
         parent = child
 
-    print(particle_id, parent)
     node_particle_id[parent] = particle_id
     node_weighted_pos[parent] = position * mass
     node_mass[parent] = mass
@@ -110,15 +108,25 @@ def add_particle_at(mx: ti.f32, my: ti.f32, mass: ti.f32):
     particle_id = alloc_particle()
     particle_pos[particle_id] = mouse_pos
     particle_mass[particle_id] = mass
-    alloc_a_node_for_particle(particle_id)
 
-    trash_id = 0
-    while trash_id < trash_table_len[None]:
-        print('tid', trash_particle_id[trash_id])
-        alloc_a_node_for_particle(trash_particle_id[trash_id])
-        trash_id = trash_id + 1
 
+@ti.kernel
+def build_tree():
+    node_table_len[None] = 0
     trash_table_len[None] = 0
+    alloc_node()
+
+    particle_id = 0
+    while particle_id < particle_table_len[None]:
+        alloc_a_node_for_particle(particle_id)
+
+        trash_id = 0
+        while trash_id < trash_table_len[None]:
+            alloc_a_node_for_particle(trash_particle_id[trash_id])
+            trash_id = trash_id + 1
+
+        trash_table_len[None] = 0
+        particle_id = particle_id + 1
 
 
 @ti.func
@@ -161,6 +169,7 @@ while gui.running:
             gui.running = False
         elif e.key in [gui.LMB, gui.RMB]:
             add_particle_at(*gui.get_cursor_pos(), e.key == gui.LMB)
+    build_tree()
     display_image.fill(0)
     render_arrows()
     gui.set_image(display_image)
