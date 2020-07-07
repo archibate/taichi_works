@@ -7,6 +7,12 @@ class vec:
         self.x = x
         self.y = y
 
+    def __pos__(a):
+        return vec(a.x, a.y)
+
+    def __neg__(a):
+        return vec(-a.x, -a.y)
+
     def __add__(a, b):
         return vec(a.x + b.x, a.y + b.y)
 
@@ -23,9 +29,21 @@ class vec:
     def __repr__(self):
         return f'vec({self.x}, {self.y})'
 
+    def __getitem__(self, i):
+        if i == 0:
+            return self.x
+        elif i == 1:
+            return self.y
+        else:
+            raise IndexError
 
-def pol(x, y, i):
+    def __len__(self):
+        return 2
+
+
+def pol(p, i):
     sqrt = math.sqrt
+    x, y = p
     if i == (0, 0): ret = x/sqrt(x**2 + y**2)
     elif i == (1, 0): ret = -x**2/(x**2 + y**2)**(3/2) + 1/sqrt(x**2 + y**2)
     elif i == (1, 1): ret = -x*y/(x**2 + y**2)**(3/2)
@@ -41,6 +59,8 @@ def pol(x, y, i):
 
 
 
+N = 4
+
 class multipole:
     def __init__(self, center=None, *q):
         self.center = center
@@ -49,15 +69,22 @@ class multipole:
     def __repr__(self):
         return f'multipole({repr(self.center)}, {", ".join(map(repr, self.q))})'
 
+    def translate(a, k, cent):
+        cent = a.center - cent
+        ret = 0
+        for i in range(N - k - 1):
+            ret += a.q[k - i] * cent ** k
+        return ret
+
     def __add__(a, b):
         c = multipole()
-        c.q = [0 for _ in range(max(len(a.q), len(b.q)))]
+        c.q = [0 for _ in range(N)]
 
         c.q[0] = a.q[0] + b.q[0]
         c.center = (a.q[0] * a.center + b.q[0] * b.center) / c.q[0]
 
         for k in range(1, len(c.q)):
-            c.q[k] = a[i].compute() + b[i].compute()
+            c.q[k] = a.translate(k, c.center) + b.translate(k, c.center)
 
         return c
 
@@ -68,6 +95,6 @@ G = q g(r - r0)
 G = q g(r) - q r0 @ g'(r) - q r0 @@ g''(r) - q r0 @@@ g'''(r)
 """
 
-a = multipole(vec(0, 1), 1)
-b = multipole(vec(0, 1), 1)
+a = multipole(+1, 1, 0, 0, 0)
+b = multipole(-1, 1, 0, 0, 0)
 print(a + b)
