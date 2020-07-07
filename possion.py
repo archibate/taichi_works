@@ -9,16 +9,18 @@ y = ti.var(ti.f32, (512, 512))
 b = ti.var(ti.i32, (512, 512))
 
 
-links = [ti.Vector(_) for _ in [[-1, 0], [1, 0], [0, -1], [0, 1]]]
+links = [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]]
+weights = [1, 1, 1, 1, 0.5, 0.5, 0.5, 0.5]
+links = [ti.Vector(_) for _ in links]
 @ti.kernel
 def possion(x: ti.template(), y: ti.template()):
     for i in ti.grouped(x):
         if b[i] == 1:
             continue
         avg = x[i] * 0
-        for dir in ti.static(links):
-            avg += x[i + dir]
-        y[i] = avg / len(links)
+        for dir, wei in ti.static(zip(links, weights)):
+            avg += wei * x[i + dir]
+        y[i] = avg / sum(weights)
 
 
 @ti.kernel
