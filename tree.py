@@ -149,8 +149,9 @@ def get_tree_gravity_at(position):
     trash_base_parent[trash_id] = 0
     trash_base_geo_size[trash_id] = 1.0
 
-    trash_id = 1
+    trash_id = 0
     while trash_id < trash_table_len[None]:
+        print('tid', trash_id)
         parent = trash_base_parent[trash_id]
         parent_geo_size = trash_base_geo_size[trash_id]
 
@@ -167,13 +168,16 @@ def get_tree_gravity_at(position):
                     continue
                 node_center = node_weighted_pos[child] / node_mass[child]
                 distance = node_center - position
-                if distance.norm_sqr() > parent_geo_size:
+                if distance.norm_sqr() > parent_geo_size ** 2:
                     acc += node_mass[child] * gravity_func(distance)
                 else:
+                    print('nt', child, which)
                     new_trash_id = alloc_trash()
                     child_geo_size = parent_geo_size * 0.5
                     trash_base_parent[new_trash_id] = child
                     trash_base_geo_size[new_trash_id] = child_geo_size
+
+        trash_id = trash_id + 1
 
     return acc
 
