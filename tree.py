@@ -13,6 +13,11 @@ particle_table = ti.root.dense(ti.i, kMaxParticles)
 particle_table.place(particle_pos).place(particle_vel).place(particle_mass)
 particle_table_len = ti.var(ti.i32, ())
 
+trash_particle_id = ti.var(ti.i32)
+trash_table = ti.root.dense(ti.i, kMaxParticles)
+trash_table.place(trash_particle_id)
+trash_table_len = ti.var(ti.i32, ())
+
 node_mass = ti.var(ti.f32)
 node_weighted_pos = ti.Vector(2, ti.f32)
 node_particle_id = ti.var(ti.i32)
@@ -21,8 +26,6 @@ node_table = ti.root.dense(ti.i, kMaxNodes)
 node_table.place(node_mass, node_particle_id, node_weighted_pos)
 node_table.dense(ti.jk, 2).place(node_children)
 node_table_len = ti.var(ti.i32, ())
-
-display_image = ti.var(ti.f32, (512, 512))
 
 
 @ti.func
@@ -48,6 +51,14 @@ def alloc_particle():
 
 
 @ti.func
+def append_trash(particle_id):
+    ret = ti.atomic_add(trash_table_len[None], 1)
+    assert ret < kMaxParticles
+    trash_particle_id[ret] = particle_id
+    return ret
+
+
+@ti.func
 def alloc_a_node_for_particle(particle_id):
     parent = 0
     parent_geo_center = particle_pos[0] * 0 + 0.5
@@ -55,10 +66,11 @@ def alloc_a_node_for_particle(particle_id):
     position = particle_pos[particle_id]
     mass = particle_mass[particle_id]
     while 1:
-        already_have_particle_id = node_particle_id[parent]
-        if already_have_particle_id == LEAF:
+        already_particle_id = node_particle_id[parent]
+        if already_particle_id == LEAF:
             break
         node_particle_id[parent] = LEAF
+        append_trash(already_particle_id)
 
         which_child = abs(position > parent_geo_center)
         child = node_children[parent, which_child]
@@ -81,25 +93,42 @@ def alloc_a_node_for_particle(particle_id):
 @ti.kernel
 def init():
     node_table_len[None] = 0
+    trash_table_len[None] = 0
     particle_table_len[None] = 0
     alloc_node()
 
 
 @ti.kernel
-def render(mx: ti.f32, my: ti.f32):
-    for pixel in ti.grouped(display_image):
-        display_image[pixel] = 0
-
+def touch(mx: ti.f32, my: ti.f32):
     mouse_pos = tl.vec(mx, my)
 
     particle_id = alloc_particle()
     particle_pos[particle_id] = mouse_pos
     alloc_a_node_for_particle(particle_id)
 
-    for which in ti.static(ti.grouped(ti.ndrange(2, 2))):
-        child = node_children[0, which]
-        for pixel in ti.grouped(ti.ndrange(256, 256)):
-            display_image[which * 256 + pixel] = tl.mix(0, 0.1, child != LEAF)
+    trash_id = 0
+    while trash_id < trash_table_len[None]:
+        print('tid', trash_id)
+        alloc_a_node_for_particle(trash_particle_id[trash_id])
+        trash_id = trash_id + 1
+
+    trash_table_len[None] = 0
+
+
+def render(gui, parent=0, parent_geo_center=tl.vec(0.5, 0.5), parent_geo_size=1.0):
+    child_geo_size = parent_geo_size * 0.5
+    if node_particle_id[parent] != LEAF:
+        tl = parent_geo_center - child_geo_size
+        br = parent_geo_center + child_geo_size
+        gui.rect(tl, br, radius=1, color=0xff0000)
+    for which in map(ti.Vector, [[0, 0], [0, 1], [1, 0], [1, 1]]):
+        child = node_children[(parent, which[0], which[1])]
+        if child != LEAF:
+            tl = parent_geo_center + (which - 1) * child_geo_size
+            br = parent_geo_center + which * child_geo_size
+            child_geo_center = parent_geo_center + (which - 0.5) * child_geo_size
+            gui.rect(tl, br, radius=1, color=0xff0000)
+            render(gui, child, child_geo_center, child_geo_size)
 
 
 init()
@@ -109,6 +138,6 @@ while gui.running:
         if e.key == gui.ESCAPE:
             gui.running = False
         elif e.key == gui.LMB:
-            render(*gui.get_cursor_pos())
-    gui.set_image(display_image)
+            touch(*gui.get_cursor_pos())
+    render(gui)
     gui.show()
