@@ -1,10 +1,11 @@
 import taichi as ti
 import taichi_glsl as tl
-ti.init()
+ti.init()#debug=True)
 
+dt = 0.0005
 LEAF = -1
 TREE = -2
-kMaxNodes = 512
+kMaxNodes = 1024
 kMaxParticles = 256
 
 particle_mass = ti.var(ti.f32)
@@ -115,6 +116,15 @@ def add_particle_at(mx: ti.f32, my: ti.f32, mass: ti.f32):
 
 
 @ti.kernel
+def add_random_particles():
+    num = ti.static(1)
+    particle_id = alloc_particle()
+    print(particle_id)
+    particle_pos[particle_id] = tl.randSolid2D() * 0.3 + 0.5
+    particle_mass[particle_id] = tl.randRange(0.0, 1.5)
+
+
+@ti.kernel
 def build_tree():
     node_table_len[None] = 0
     trash_table_len[None] = 0
@@ -144,6 +154,7 @@ def gravity_func(distance):
 def get_tree_gravity_at(position):
     acc = particle_pos[0] * 0
 
+    trash_table_len[None] = 0
     trash_id = alloc_trash()
     assert trash_id == 0
     trash_base_parent[trash_id] = 0
@@ -182,9 +193,29 @@ def get_tree_gravity_at(position):
 @ti.func
 def get_raw_gravity_at(pos):
     acc = particle_pos[0] * 0
-    for i in particle_pos:
+    for i in range(particle_table_len[None]):
         acc += particle_mass[i] * gravity_func(particle_pos[i] - pos)
     return acc
+
+
+@ti.kernel
+def substep_raw():
+    for i in range(particle_table_len[None]):
+        acceleration = get_raw_gravity_at(particle_pos[i])
+        particle_vel[i] += acceleration * dt
+    for i in range(particle_table_len[None]):
+        particle_pos[i] += particle_vel[i] * dt
+
+
+@ti.kernel
+def substep_tree():
+    particle_id = 0
+    while particle_id < particle_table_len[None]:
+        acceleration = get_tree_gravity_at(particle_pos[particle_id])
+        particle_vel[particle_id] += acceleration * dt
+        particle_id = particle_id + 1
+    for i in range(particle_table_len[None]):
+        particle_pos[i] += particle_vel[i] * dt
 
 
 @ti.kernel
@@ -219,9 +250,13 @@ while gui.running:
             gui.running = False
         elif e.key in [gui.LMB, gui.RMB]:
             add_particle_at(*gui.get_cursor_pos(), e.key == gui.LMB)
+        elif e.key == 'r':
+            add_random_particles()
     build_tree()
     display_image.fill(0)
     render_arrows(*gui.get_cursor_pos())
+    substep_tree()  # 128, 8.5 fps
+    substep_raw()  # 125, 8.4 fps
     gui.set_image(display_image)
     render_tree(gui)
     gui.circles(particle_pos.to_numpy()[:particle_table_len[None]], radius=3)
