@@ -1,4 +1,4 @@
-# N-body gravity simulation in 300 line of Taichi, tree method, no multipole, O(N log N)
+# N-body gravity simulation in 300 lines of Taichi, tree method, no multipole, O(N log N)
 # Author: archibate <1931127624@qq.com>, all left reserved
 import taichi as ti
 import taichi_glsl as tl
@@ -8,6 +8,7 @@ kUseTree = True
 #kDisplay = ['tree', 'mouse', 'pixels']
 kDisplay = ['pixels']
 kResolution = 832
+kShapeFactor = 1
 kMaxParticles = 8192
 kMaxDepth = kMaxParticles * 1
 kMaxNodes = kMaxParticles * 4
@@ -77,7 +78,8 @@ def alloc_trash():
 
 
 @ti.func
-def alloc_a_node_for_particle(particle_id, parent, parent_geo_center, parent_geo_size):
+def alloc_a_node_for_particle(particle_id, parent, parent_geo_center,
+                              parent_geo_size):
     position = particle_pos[particle_id]
     mass = particle_mass[particle_id]
 
@@ -101,13 +103,13 @@ def alloc_a_node_for_particle(particle_id, parent, parent_geo_center, parent_geo
         node_weighted_pos[parent] += position * mass
         node_mass[parent] += mass
 
-        which_child = abs(position > parent_geo_center)
-        child = node_children[parent, which_child]
+        which = abs(position > parent_geo_center)
+        child = node_children[parent, which]
         if child == LEAF:
             child = alloc_node()
-            node_children[parent, which_child] = child
+            node_children[parent, which] = child
         child_geo_size = parent_geo_size * 0.5
-        child_geo_center = parent_geo_center + (which_child - 0.5) * child_geo_size
+        child_geo_center = parent_geo_center + (which - 0.5) * child_geo_size
 
         parent_geo_center = child_geo_center
         parent_geo_size = child_geo_size
@@ -145,13 +147,15 @@ def build_tree():
 
     particle_id = 0
     while particle_id < particle_table_len[None]:
-        alloc_a_node_for_particle(particle_id, 0, particle_pos[0] * 0 + 0.5, 1.0)
+        alloc_a_node_for_particle(particle_id, 0, particle_pos[0] * 0 + 0.5,
+                                  1.0)
 
         trash_id = 0
         while trash_id < trash_table_len[None]:
             alloc_a_node_for_particle(trash_particle_id[trash_id],
-                trash_base_parent[trash_id], trash_base_geo_center[trash_id],
-                trash_base_geo_size[trash_id])
+                                      trash_base_parent[trash_id],
+                                      trash_base_geo_center[trash_id],
+                                      trash_base_geo_size[trash_id])
             trash_id = trash_id + 1
 
         trash_table_len[None] = 0
@@ -183,14 +187,14 @@ def get_tree_gravity_at(position):
             distance = particle_pos[particle_id] - position
             acc += particle_mass[particle_id] * gravity_func(distance)
 
-        else: # TREE or LEAF
+        else:  # TREE or LEAF
             for which in ti.grouped(ti.ndrange(2, 2)):
                 child = node_children[parent, which]
                 if child == LEAF:
                     continue
                 node_center = node_weighted_pos[child] / node_mass[child]
                 distance = node_center - position
-                if distance.norm_sqr() > parent_geo_size ** 2:
+                if distance.norm_sqr() > kShapeFactor**2 * parent_geo_size**2:
                     acc += node_mass[child] * gravity_func(distance)
                 else:
                     new_trash_id = alloc_trash()
@@ -228,7 +232,8 @@ def substep_tree():
         particle_vel[particle_id] += acceleration * dt
         # well... seems our tree inserter will break if particle out-of-bound:
         particle_vel[particle_id] = tl.boundReflect(particle_pos[particle_id],
-                        particle_vel[particle_id], 0, 1)
+                                                    particle_vel[particle_id],
+                                                    0, 1)
         particle_id = particle_id + 1
     for i in range(particle_table_len[None]):
         particle_pos[i] += particle_vel[i] * dt
@@ -251,7 +256,10 @@ def render_pixels():
         display_image[tl.clamp(pix, 0, kResolution - 1)] += 0.25
 
 
-def render_tree(gui, parent=0, parent_geo_center=tl.vec(0.5, 0.5), parent_geo_size=1.0):
+def render_tree(gui,
+                parent=0,
+                parent_geo_center=tl.vec(0.5, 0.5),
+                parent_geo_size=1.0):
     child_geo_size = parent_geo_size * 0.5
     if node_particle_id[parent] >= 0:
         tl = parent_geo_center - child_geo_size
@@ -259,12 +267,13 @@ def render_tree(gui, parent=0, parent_geo_center=tl.vec(0.5, 0.5), parent_geo_si
         gui.rect(tl, br, radius=1, color=0xff0000)
     for which in map(ti.Vector, [[0, 0], [0, 1], [1, 0], [1, 1]]):
         child = node_children[(parent, which[0], which[1])]
-        if child >= 0:
-            a = parent_geo_center + (which - 1) * child_geo_size
-            b = parent_geo_center + which * child_geo_size
-            child_geo_center = parent_geo_center + (which - 0.5) * child_geo_size
-            gui.rect(a, b, radius=1, color=0xff0000)
-            render_tree(gui, child, child_geo_center, child_geo_size)
+        if child < 0:
+            continue
+        a = parent_geo_center + (which - 1) * child_geo_size
+        b = parent_geo_center + which * child_geo_size
+        child_geo_center = parent_geo_center + (which - 0.5) * child_geo_size
+        gui.rect(a, b, radius=1, color=0xff0000)
+        render_tree(gui, child, child_geo_center, child_geo_size)
 
 
 print('[Hint] Press `r` to add 512 random particles')
@@ -301,5 +310,5 @@ while gui.running:
     if 'tree' in kDisplay:
         render_tree(gui)
     if 'pixels' not in kDisplay:
-        gui.circles(particle_pos.to_numpy()[:particle_table_len[None]], radius=1)
+        gui.circles(particle_pos.to_numpy()[:particle_table_len[None]])
     gui.show()
