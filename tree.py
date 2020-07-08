@@ -151,7 +151,6 @@ def get_tree_gravity_at(position):
 
     trash_id = 0
     while trash_id < trash_table_len[None]:
-        print('tid', trash_id)
         parent = trash_base_parent[trash_id]
         parent_geo_size = trash_base_geo_size[trash_id]
 
@@ -159,7 +158,6 @@ def get_tree_gravity_at(position):
         if particle_id >= 0:
             distance = particle_pos[particle_id] - position
             acc += particle_mass[particle_id] * gravity_func(distance)
-            break
 
         else: # TREE or LEAF
             for which in ti.grouped(ti.ndrange(2, 2)):
@@ -171,7 +169,6 @@ def get_tree_gravity_at(position):
                 if distance.norm_sqr() > parent_geo_size ** 2:
                     acc += node_mass[child] * gravity_func(distance)
                 else:
-                    print('nt', child, which)
                     new_trash_id = alloc_trash()
                     child_geo_size = parent_geo_size * 0.5
                     trash_base_parent[new_trash_id] = child
@@ -191,13 +188,12 @@ def get_raw_gravity_at(pos):
 
 
 @ti.kernel
-def render_arrows():
-    particle_id = max(0, particle_table_len[None] - 1)
-    pos = particle_pos[particle_id]
+def render_arrows(mx: ti.f32, my: ti.f32):
+    pos = tl.vec(mx, my)
     acc = get_raw_gravity_at(pos) * 0.001
-    tl.paintArrow(display_image, pos, acc, tl.D.yxy)
+    tl.paintArrow(display_image, pos, acc, tl.D.yyx)
     acc_tree = get_tree_gravity_at(pos) * 0.001
-    tl.paintArrow(display_image, pos, acc_tree, tl.D.yyx)
+    tl.paintArrow(display_image, pos, acc_tree, tl.D.yxy)
 
 
 def render_tree(gui, parent=0, parent_geo_center=tl.vec(0.5, 0.5), parent_geo_size=1.0):
@@ -225,7 +221,7 @@ while gui.running:
             add_particle_at(*gui.get_cursor_pos(), e.key == gui.LMB)
     build_tree()
     display_image.fill(0)
-    render_arrows()
+    render_arrows(*gui.get_cursor_pos())
     gui.set_image(display_image)
     render_tree(gui)
     gui.circles(particle_pos.to_numpy()[:particle_table_len[None]], radius=3)
