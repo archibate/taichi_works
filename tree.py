@@ -2,12 +2,14 @@
 # Author: archibate <1931127624@qq.com>, all left reserved
 import taichi as ti
 import taichi_glsl as tl
-ti.init()#debug=True)
+ti.init()
+
 kUseTree = True
 #kDisplay = ['tree', 'mouse', 'pixels']
 kDisplay = ['pixels']
 kResolution = 832
 kMaxParticles = 8192
+kMaxDepth = kMaxParticles * 1
 kMaxNodes = kMaxParticles * 4
 
 dt = 0.00005
@@ -26,7 +28,7 @@ if kUseTree:
     trash_base_parent = ti.var(ti.i32)
     trash_base_geo_center = ti.Vector(2, ti.f32)
     trash_base_geo_size = ti.var(ti.f32)
-    trash_table = ti.root.dense(ti.i, kMaxParticles)
+    trash_table = ti.root.dense(ti.i, kMaxDepth)
     trash_table.place(trash_particle_id)
     trash_table.place(trash_base_parent, trash_base_geo_size)
     trash_table.place(trash_base_geo_center)
@@ -50,7 +52,7 @@ def alloc_node():
     ret = ti.atomic_add(node_table_len[None], 1)
     assert ret < kMaxNodes
     node_mass[ret] = 0
-    node_weighted_pos[ret] = 0
+    node_weighted_pos[ret] = particle_pos[0] * 0
     node_particle_id[ret] = LEAF
     for which in ti.grouped(ti.ndrange(2, 2)):
         node_children[ret, which] = LEAF
@@ -62,8 +64,8 @@ def alloc_particle():
     ret = ti.atomic_add(particle_table_len[None], 1)
     assert ret < kMaxParticles
     particle_mass[ret] = 0
-    particle_pos[ret] = 0
-    particle_vel[ret] = 0
+    particle_pos[ret] = particle_pos[0] * 0
+    particle_vel[ret] = particle_pos[0] * 0
     return ret
 
 
@@ -78,7 +80,9 @@ def alloc_trash():
 def alloc_a_node_for_particle(particle_id, parent, parent_geo_center, parent_geo_size):
     position = particle_pos[particle_id]
     mass = particle_mass[particle_id]
-    while 1:
+
+    depth = 0
+    while depth < kMaxDepth:
         already_particle_id = node_particle_id[parent]
         if already_particle_id == LEAF:
             break
@@ -109,6 +113,8 @@ def alloc_a_node_for_particle(particle_id, parent, parent_geo_center, parent_geo
         parent_geo_size = child_geo_size
         parent = child
 
+        depth = depth + 1
+
     node_particle_id[parent] = particle_id
     node_weighted_pos[parent] = position * mass
     node_mass[parent] = mass
@@ -116,7 +122,7 @@ def alloc_a_node_for_particle(particle_id, parent, parent_geo_center, parent_geo
 
 @ti.kernel
 def add_particle_at(mx: ti.f32, my: ti.f32, mass: ti.f32):
-    mouse_pos = tl.vec(mx, my)
+    mouse_pos = tl.vec(mx, my) + tl.randND(2) * (0.05 / kResolution)
 
     particle_id = alloc_particle()
     particle_pos[particle_id] = mouse_pos
@@ -262,22 +268,22 @@ def render_tree(gui, parent=0, parent_geo_center=tl.vec(0.5, 0.5), parent_geo_si
 
 
 print('[Hint] Press `r` to add 512 random particles')
-print('[Hint] Click mouse left button to add a single particle')
-print('[Hint] Drag with mouse right button to add a series of particles')
+print('[Hint] Drag with mouse left button to add a series of particles')
 print('[Hint] Drag with mouse middle button to add zero-mass particles')
+print('[Hint] Click mouse right button to add a single particle')
 gui = ti.GUI('Tree-code', kResolution)
 while gui.running:
     for e in gui.get_events(gui.PRESS):
         if e.key == gui.ESCAPE:
             gui.running = False
-        elif e.key in [gui.LMB]:
+        elif e.key == gui.RMB:
             add_particle_at(*gui.get_cursor_pos(), 1.0)
         elif e.key == 'r':
             if particle_table_len[None] + 512 < kMaxParticles:
                 for i in range(512):
                     add_random_particles()
-    if gui.is_pressed(gui.MMB, gui.RMB):
-        add_particle_at(*gui.get_cursor_pos(), gui.is_pressed(gui.RMB))
+    if gui.is_pressed(gui.MMB, gui.LMB):
+        add_particle_at(*gui.get_cursor_pos(), gui.is_pressed(gui.LMB))
 
     if kUseTree:
         build_tree()
