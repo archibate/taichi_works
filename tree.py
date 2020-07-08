@@ -1,10 +1,11 @@
+# N-body gravity simulation in 300 line of Taichi, tree method, no multipole, O(N log N)
+# Author: archibate <1931127624@qq.com>, all left reserved
 import taichi as ti
 import taichi_glsl as tl
 ti.init()#debug=True)
 kUseTree = True
-kDisplay = []
 #kDisplay = ['tree', 'mouse', 'pixels']
-#kDisplay = ['pixels']
+kDisplay = ['pixels']
 kResolution = 832
 kMaxParticles = 8192
 kMaxNodes = kMaxParticles * 4
@@ -241,7 +242,7 @@ def render_pixels():
     for i in range(particle_table_len[None]):
         position = particle_pos[i]
         pix = int(position * kResolution)
-        display_image[tl.clamp(pix, 0, kResolution - 1)] += 0.2
+        display_image[tl.clamp(pix, 0, kResolution - 1)] += 0.25
 
 
 def render_tree(gui, parent=0, parent_geo_center=tl.vec(0.5, 0.5), parent_geo_size=1.0):
@@ -253,10 +254,10 @@ def render_tree(gui, parent=0, parent_geo_center=tl.vec(0.5, 0.5), parent_geo_si
     for which in map(ti.Vector, [[0, 0], [0, 1], [1, 0], [1, 1]]):
         child = node_children[(parent, which[0], which[1])]
         if child >= 0:
-            tl = parent_geo_center + (which - 1) * child_geo_size
-            br = parent_geo_center + which * child_geo_size
+            a = parent_geo_center + (which - 1) * child_geo_size
+            b = parent_geo_center + which * child_geo_size
             child_geo_center = parent_geo_center + (which - 0.5) * child_geo_size
-            gui.rect(tl, br, radius=1, color=0xff0000)
+            gui.rect(a, b, radius=1, color=0xff0000)
             render_tree(gui, child, child_geo_center, child_geo_size)
 
 
@@ -283,16 +284,16 @@ while gui.running:
         substep_tree()
     else:
         substep_raw()
-    if len(kDisplay):
+    if len(kDisplay) and 'trace' not in kDisplay:
         display_image.fill(0)
     if 'mouse' in kDisplay:
         render_arrows(*gui.get_cursor_pos())
-    if 'tree' in kDisplay:
-        render_tree(gui)
     if 'pixels' in kDisplay:
         render_pixels()
     if len(kDisplay):
         gui.set_image(display_image)
+    if 'tree' in kDisplay:
+        render_tree(gui)
     if 'pixels' not in kDisplay:
         gui.circles(particle_pos.to_numpy()[:particle_table_len[None]], radius=1)
     gui.show()
