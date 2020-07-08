@@ -2,8 +2,10 @@ import taichi as ti
 import taichi_glsl as tl
 ti.init()#debug=True)
 kUseTree = True
-kDisplayTree = False
-kDisplayMouse = False
+kDisplay = []
+#kDisplay = ['tree', 'mouse', 'pixels']
+#kDisplay = ['pixels']
+kResolution = 832
 kMaxParticles = 8192
 kMaxNodes = kMaxParticles * 4
 
@@ -38,8 +40,8 @@ if kUseTree:
     node_table.dense(ti.jk, 2).place(node_children)
     node_table_len = ti.var(ti.i32, ())
 
-if kDisplayMouse:
-    display_image = ti.Vector(3, ti.f32, (512, 512))
+if len(kDisplay):
+    display_image = ti.Vector(3, ti.f32, (kResolution, kResolution))
 
 
 @ti.func
@@ -124,8 +126,7 @@ def add_particle_at(mx: ti.f32, my: ti.f32, mass: ti.f32):
 def add_random_particles():
     num = ti.static(1)
     particle_id = alloc_particle()
-    print(particle_id)
-    particle_pos[particle_id] = tl.randSolid2D() * 0.25 + 0.5
+    particle_pos[particle_id] = tl.randSolid2D() * 0.2 + 0.5
     particle_mass[particle_id] = tl.randRange(0.0, 1.5)
 
 
@@ -218,6 +219,9 @@ def substep_tree():
     while particle_id < particle_table_len[None]:
         acceleration = get_tree_gravity_at(particle_pos[particle_id])
         particle_vel[particle_id] += acceleration * dt
+        # well... seems our tree inserter will break if particle out-of-bound:
+        particle_vel[particle_id] = tl.boundReflect(particle_pos[particle_id],
+                        particle_vel[particle_id], 0, 1)
         particle_id = particle_id + 1
     for i in range(particle_table_len[None]):
         particle_pos[i] += particle_vel[i] * dt
@@ -230,6 +234,14 @@ def render_arrows(mx: ti.f32, my: ti.f32):
     tl.paintArrow(display_image, pos, acc, tl.D.yyx)
     acc_tree = get_tree_gravity_at(pos) * 0.001
     tl.paintArrow(display_image, pos, acc_tree, tl.D.yxy)
+
+
+@ti.kernel
+def render_pixels():
+    for i in range(particle_table_len[None]):
+        position = particle_pos[i]
+        pix = int(position * kResolution)
+        display_image[tl.clamp(pix, 0, kResolution - 1)] += 0.2
 
 
 def render_tree(gui, parent=0, parent_geo_center=tl.vec(0.5, 0.5), parent_geo_size=1.0):
@@ -248,26 +260,39 @@ def render_tree(gui, parent=0, parent_geo_center=tl.vec(0.5, 0.5), parent_geo_si
             render_tree(gui, child, child_geo_center, child_geo_size)
 
 
-gui = ti.GUI('Tree-code')
+print('[Hint] Press `r` to add 512 random particles')
+print('[Hint] Click mouse left button to add a single particle')
+print('[Hint] Drag with mouse right button to add a series of particles')
+print('[Hint] Drag with mouse middle button to add zero-mass particles')
+gui = ti.GUI('Tree-code', kResolution)
 while gui.running:
     for e in gui.get_events(gui.PRESS):
         if e.key == gui.ESCAPE:
             gui.running = False
-        elif e.key in [gui.LMB, gui.RMB]:
-            add_particle_at(*gui.get_cursor_pos(), e.key == gui.LMB)
+        elif e.key in [gui.LMB]:
+            add_particle_at(*gui.get_cursor_pos(), 1.0)
         elif e.key == 'r':
-            for i in range(1024):
-                add_random_particles()
+            if particle_table_len[None] + 512 < kMaxParticles:
+                for i in range(512):
+                    add_random_particles()
+    if gui.is_pressed(gui.MMB, gui.RMB):
+        add_particle_at(*gui.get_cursor_pos(), gui.is_pressed(gui.RMB))
+
     if kUseTree:
         build_tree()
         substep_tree()
     else:
         substep_raw()
-    if kDisplayMouse:
+    if len(kDisplay):
         display_image.fill(0)
+    if 'mouse' in kDisplay:
         render_arrows(*gui.get_cursor_pos())
-        gui.set_image(display_image)
-    if kUseTree and kDisplayTree:
+    if 'tree' in kDisplay:
         render_tree(gui)
-    gui.circles(particle_pos.to_numpy()[:particle_table_len[None]], radius=1)
+    if 'pixels' in kDisplay:
+        render_pixels()
+    if len(kDisplay):
+        gui.set_image(display_image)
+    if 'pixels' not in kDisplay:
+        gui.circles(particle_pos.to_numpy()[:particle_table_len[None]], radius=1)
     gui.show()
