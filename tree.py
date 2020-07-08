@@ -1,12 +1,15 @@
 import taichi as ti
 import taichi_glsl as tl
 ti.init()#debug=True)
+kUseTree = True
+kDisplayTree = False
+kDisplayMouse = False
+kMaxParticles = 8192
+kMaxNodes = kMaxParticles * 4
 
-dt = 0.0005
+dt = 0.00005
 LEAF = -1
 TREE = -2
-kMaxNodes = 1024
-kMaxParticles = 256
 
 particle_mass = ti.var(ti.f32)
 particle_pos = ti.Vector(2, ti.f32)
@@ -15,26 +18,28 @@ particle_table = ti.root.dense(ti.i, kMaxParticles)
 particle_table.place(particle_pos).place(particle_vel).place(particle_mass)
 particle_table_len = ti.var(ti.i32, ())
 
-trash_particle_id = ti.var(ti.i32)
-trash_base_parent = ti.var(ti.i32)
-trash_base_geo_center = ti.Vector(2, ti.f32)
-trash_base_geo_size = ti.var(ti.f32)
-trash_table = ti.root.dense(ti.i, kMaxParticles)
-trash_table.place(trash_particle_id)
-trash_table.place(trash_base_parent, trash_base_geo_size)
-trash_table.place(trash_base_geo_center)
-trash_table_len = ti.var(ti.i32, ())
+if kUseTree:
+    trash_particle_id = ti.var(ti.i32)
+    trash_base_parent = ti.var(ti.i32)
+    trash_base_geo_center = ti.Vector(2, ti.f32)
+    trash_base_geo_size = ti.var(ti.f32)
+    trash_table = ti.root.dense(ti.i, kMaxParticles)
+    trash_table.place(trash_particle_id)
+    trash_table.place(trash_base_parent, trash_base_geo_size)
+    trash_table.place(trash_base_geo_center)
+    trash_table_len = ti.var(ti.i32, ())
 
-node_mass = ti.var(ti.f32)
-node_weighted_pos = ti.Vector(2, ti.f32)
-node_particle_id = ti.var(ti.i32)
-node_children = ti.var(ti.i32)
-node_table = ti.root.dense(ti.i, kMaxNodes)
-node_table.place(node_mass, node_particle_id, node_weighted_pos)
-node_table.dense(ti.jk, 2).place(node_children)
-node_table_len = ti.var(ti.i32, ())
+    node_mass = ti.var(ti.f32)
+    node_weighted_pos = ti.Vector(2, ti.f32)
+    node_particle_id = ti.var(ti.i32)
+    node_children = ti.var(ti.i32)
+    node_table = ti.root.dense(ti.i, kMaxNodes)
+    node_table.place(node_mass, node_particle_id, node_weighted_pos)
+    node_table.dense(ti.jk, 2).place(node_children)
+    node_table_len = ti.var(ti.i32, ())
 
-display_image = ti.Vector(3, ti.f32, (512, 512))
+if kDisplayMouse:
+    display_image = ti.Vector(3, ti.f32, (512, 512))
 
 
 @ti.func
@@ -120,7 +125,7 @@ def add_random_particles():
     num = ti.static(1)
     particle_id = alloc_particle()
     print(particle_id)
-    particle_pos[particle_id] = tl.randSolid2D() * 0.3 + 0.5
+    particle_pos[particle_id] = tl.randSolid2D() * 0.25 + 0.5
     particle_mass[particle_id] = tl.randRange(0.0, 1.5)
 
 
@@ -251,13 +256,18 @@ while gui.running:
         elif e.key in [gui.LMB, gui.RMB]:
             add_particle_at(*gui.get_cursor_pos(), e.key == gui.LMB)
         elif e.key == 'r':
-            add_random_particles()
-    build_tree()
-    display_image.fill(0)
-    render_arrows(*gui.get_cursor_pos())
-    substep_tree()  # 128, 8.5 fps
-    substep_raw()  # 125, 8.4 fps
-    gui.set_image(display_image)
-    render_tree(gui)
-    gui.circles(particle_pos.to_numpy()[:particle_table_len[None]], radius=3)
+            for i in range(1024):
+                add_random_particles()
+    if kUseTree:
+        build_tree()
+        substep_tree()
+    else:
+        substep_raw()
+    if kDisplayMouse:
+        display_image.fill(0)
+        render_arrows(*gui.get_cursor_pos())
+        gui.set_image(display_image)
+    if kUseTree and kDisplayTree:
+        render_tree(gui)
+    gui.circles(particle_pos.to_numpy()[:particle_table_len[None]], radius=1)
     gui.show()
