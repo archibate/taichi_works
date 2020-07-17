@@ -1,15 +1,15 @@
 import taichi as ti
 import taichi_glsl as tl
-ti.init()
+ti.init(arch=ti.gpu)
 
-N = 4
+N = 10
 NF = 2 * N ** 2
 NV = (N + 1) ** 2
-E, nu = 5e3, 0.2
+E, nu = 1e5, 0.2
 mu, lam = E / 2 / (1 + nu), E * nu / (1 + nu) / (1 - 2 * nu)
 gravity = tl.vec(0, -40)
-damping = 20.0
-dt = 5e-4
+damping = 12.5
+dt = 1.5e-4
 
 ball_pos = tl.vec(0.5, 0.0)
 ball_radius = 0.35
@@ -76,7 +76,7 @@ def paint_phi():
         a = pos[faces[i].x]
         b = pos[faces[i].y]
         c = pos[faces[i].z]
-        k = phi[i] * 0.001
+        k = phi[i] * 10 / E
         color = k * tl.D.xyy + (1 - k) * tl.D.xxx * 0.5
         try:
             gui.triangle(a, b, c, color=ti.rgb_to_hex(color))
@@ -98,11 +98,21 @@ def pull(m0):
 @ti.kernel
 def init():
     for i, j in ti.ndrange(N + 1, N + 1):
-        pos[i * (N + 1) + j] = tl.vec(i, j) / N * 0.25 + 0.5 
+        k = i * (N + 1) + j
+        pos[k] = tl.vec(i, j) / N * 0.25 + tl.vec(0.45, 0.45)
+        vel[k] = tl.vec2(0)
     for i, j in ti.ndrange(N, N):
         k = (i * N + j) * 2
-        faces[k + 0] = [i * (N + 1) + j, (i + 1) * (N + 1) + j, (i + 1) * (N + 1) + (j + 1)]
-        faces[k + 1] = [(i + 1) * (N + 1) + (j + 1), i * (N + 1) + j, i * (N + 1) + (j + 1)]
+        a = i * (N + 1) + j
+        b = a + 1
+        c = a + N + 2
+        d = a + N + 1
+        if j % 2 == 0:
+            faces[k + 0] = [a, b, c]
+            faces[k + 1] = [c, d, a]
+        else:
+            faces[k + 0] = [d, a, b]
+            faces[k + 1] = [b, c, d]
 
 
 def substep():
@@ -122,8 +132,10 @@ while gui.running:
         elif e.key == gui.LMB:
             pull(tl.vec(*gui.get_cursor_pos()))
             m0 = None
+        elif e.key == 'r':
+            init()
 
-    for i in range(10):
+    for i in range(14):
         substep()
 
     paint_phi()
