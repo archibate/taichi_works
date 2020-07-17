@@ -2,13 +2,13 @@ import taichi as ti
 import taichi_glsl as tl
 ti.init()
 
-NF = 6
+NF = 32
 NV = NF + 2
 E, nu = 5e3, 0.2
 mu, lam = E / 2 / (1 + nu), E * nu / (1 + nu) / (1 - 2 * nu)
-gravity = tl.vec(0, -160)
+gravity = tl.vec(0, -40)
 damping = 20.0
-dt = 0.001
+dt = 5e-4
 
 pos = ti.Vector.var(2, ti.f32, NV, needs_grad=True)
 vel = ti.Vector.var(2, ti.f32, NV)
@@ -62,6 +62,7 @@ def advance():
         vel[i] += dt * (f_i + gravity)
         vel[i] *= ti.exp(-dt * damping)
     for i in range(NV):
+        vel[i] = tl.ballBoundReflect(pos[i], vel[i], tl.vec(0.5, 0.0), 0.35)
         vel[i] = tl.boundReflect(pos[i], vel[i], 0, 1, 0)
         pos[i] += dt * vel[i]
 
@@ -96,7 +97,7 @@ def init():
         faces[i] = [i, i + 1, i + 2]
     for i in range(NV):
         pos[i] = tl.vec(i / NV * 0.8 + 0.1,
-                0.5 + ti.pow(-1, i) * (ti.random() * 0.0 + 0.9) * 0.15)
+                0.5 + pow(-1, i) / NV)
 
 
 init()
