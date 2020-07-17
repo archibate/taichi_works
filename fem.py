@@ -9,15 +9,14 @@ mu, lam = E / 2 / (1 + nu), E * nu / (1 + nu) / (1 - 2 * nu)
 damping = 100.0
 dt = 0.001
 
-vertices = ti.Vector.var(2, ti.f32, NV)
+vertices = ti.Vector.var(2, ti.f32, NV, needs_grad=True)
 velocity = ti.Vector.var(2, ti.f32, NV)
 faces = ti.Vector.var(3, ti.i32, NF)
 B = ti.Matrix.var(2, 2, ti.f32, NF)
-F = ti.Matrix.var(2, 2, ti.f32, NF)
-dF = ti.Vector.var(2, ti.f32, (NF, NV))
-P = ti.Matrix.var(2, 2, ti.f32, NF)
-phi = ti.var(ti.f32, NF)
+F = ti.Matrix.var(2, 2, ti.f32, NF, needs_grad=True)
 V = ti.var(ti.f32, NF)
+phi = ti.var(ti.f32, NF)
+U = ti.var(ti.f32, (), needs_grad=True)
 
 
 @ti.kernel
@@ -36,34 +35,9 @@ def update_F():
         a = vertices[ia]
         b = vertices[ib]
         c = vertices[ic]
+        V[i] = abs((a - c).cross(b - c))
         D_i = ti.Matrix.cols([a - c, b - c])
         F[i] = D_i @ B[i]
-        dF[i, ia] += B[i] @ ti.Vector([1, 0])
-        dF[i, ib] += B[i] @ ti.Vector([0, 1])
-        dF[i, ic] += B[i] @ ti.Vector([-1, -1])
-        V[i] = abs((a - c).cross(b - c))
-
-
-@ti.kernel
-def update_P():
-    for i in range(NF):
-        F_i = F[i]
-        J_i = F_i.determinant()
-        log_J_i = ti.log(J_i)
-        P_i = mu * (F_i - F_i.transpose())
-        P[i] = P_i
-
-
-@ti.kernel
-def advance():
-    for i in range(NV):
-        f_i = tl.vec2(0.0)
-        for e in range(NF):
-            f_i += V[e] * P[e] @ dF[e, i]
-        velocity[i] += -dt * f_i
-        velocity[i] *= ti.exp(-dt * damping)
-    for i in range(NV):
-        vertices[i] += dt * velocity[i]
 
 
 @ti.kernel
@@ -76,6 +50,17 @@ def update_phi():
         phi_i -= mu * log_J_i
         phi_i += lam / 2 * log_J_i ** 2
         phi[i] = phi_i
+        U[None] += V[i] * phi_i
+
+
+@ti.kernel
+def advance():
+    for i in range(NV):
+        f_i = -vertices.grad[i]
+        velocity[i] += dt * f_i
+        velocity[i] *= ti.exp(-dt * damping)
+    for i in range(NV):
+        vertices[i] += dt * velocity[i]
 
 
 def paint_phi():
@@ -122,11 +107,10 @@ while gui.running:
             pull(tl.vec(*gui.get_cursor_pos()))
             m0 = None
 
-    dF.fill(0)
-    update_F()
-    update_P()
+    with ti.Tape(loss=U):
+        update_F()
+        update_phi()
     advance()
-    update_phi()
     paint_phi()
 
     gui.circles(vertices.to_numpy(), radius=4)
