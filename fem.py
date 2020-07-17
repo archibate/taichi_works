@@ -50,12 +50,25 @@ def paint_P():
         a = vertices[faces[i].x]
         b = vertices[faces[i].y]
         c = vertices[faces[i].z]
-        phi_i = phi[i]
-        color = phi_i * tl.D.xyy + (1 - phi_i) * tl.D.yxy
+        k = phi[i] * 0.005
+        color = k * tl.D.xyy + (1 - k) * tl.D.yxy
         try:
             gui.triangle(a, b, c, color=ti.rgb_to_hex(color))
         except ValueError:
             gui.triangle(a, b, c)
+
+
+def pull(m0, m1):
+    closest = -1
+    closest_dist = 1e5
+    for i in range(NV):
+        dist = (m0 - vertices[i].value).L
+        if dist < closest_dist:
+            closest, closest_dist = i, dist
+
+    vertices[closest] = m1.entries
+    #vertices[closest].x = vertices[closest].x + dm.x
+    #vertices[closest].y = vertices[closest].y + dm.y
 
 
 @ti.kernel
@@ -67,6 +80,8 @@ def init():
                 0.5 + ti.pow(-1, i) * (ti.random() * 0.2 + 0.9) * 0.15)
 
 
+m0 = None
+
 init()
 update_B()
 gui = ti.GUI('FEM')
@@ -74,6 +89,14 @@ while gui.running:
     for e in gui.get_events():
         if e.key == gui.ESCAPE:
             gui.running = False
+        elif e.key == gui.LMB:
+            if e.type == gui.PRESS:
+                if m0 is None:
+                    m0 = tl.vec(*gui.get_cursor_pos())
+            else:
+                m1 = tl.vec(*gui.get_cursor_pos())
+                pull(m0, m1)
+                m0 = None
 
     update_F()
     update_P()
