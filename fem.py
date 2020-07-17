@@ -76,8 +76,8 @@ def paint_phi():
         a = pos[faces[i].x]
         b = pos[faces[i].y]
         c = pos[faces[i].z]
-        k = phi[i] * 0.002
-        color = k * tl.D.xyy + (1 - k) * tl.D.yxy
+        k = phi[i] * 0.001
+        color = k * tl.D.xyy + (1 - k) * tl.D.xxx * 0.5
         try:
             gui.triangle(a, b, c, color=ti.rgb_to_hex(color))
         except ValueError:
@@ -105,6 +105,13 @@ def init():
         faces[k + 1] = [(i + 1) * (N + 1) + (j + 1), i * (N + 1) + j, i * (N + 1) + (j + 1)]
 
 
+def substep():
+    with ti.Tape(loss=U):
+        update_F()
+        update_phi()
+    advance()
+
+
 init()
 update_B()
 gui = ti.GUI('FEM')
@@ -116,12 +123,11 @@ while gui.running:
             pull(tl.vec(*gui.get_cursor_pos()))
             m0 = None
 
-    with ti.Tape(loss=U):
-        update_F()
-        update_phi()
-    advance()
+    for i in range(10):
+        substep()
+
     paint_phi()
 
-    gui.circles(pos.to_numpy(), radius=2, color=0xaa6633)
-    gui.circle(ball_pos, radius=ball_radius * 512, color=0xffeecc)
+    gui.circles(pos.to_numpy(), radius=2, color=0xffaa33)
+    gui.circle(ball_pos, radius=ball_radius * 512, color=0x666666)
     gui.show()
