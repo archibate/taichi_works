@@ -6,11 +6,12 @@ NF = 6
 NV = NF + 2
 E, nu = 5e3, 0.2
 mu, lam = E / 2 / (1 + nu), E * nu / (1 + nu) / (1 - 2 * nu)
-damping = 100.0
+gravity = tl.vec(0, -160)
+damping = 20.0
 dt = 0.001
 
-vertices = ti.Vector.var(2, ti.f32, NV, needs_grad=True)
-velocity = ti.Vector.var(2, ti.f32, NV)
+pos = ti.Vector.var(2, ti.f32, NV, needs_grad=True)
+vel = ti.Vector.var(2, ti.f32, NV)
 faces = ti.Vector.var(3, ti.i32, NF)
 B = ti.Matrix.var(2, 2, ti.f32, NF)
 F = ti.Matrix.var(2, 2, ti.f32, NF, needs_grad=True)
@@ -22,19 +23,20 @@ U = ti.var(ti.f32, (), needs_grad=True)
 @ti.kernel
 def update_B():
     for i in range(NF):
-        a = vertices[faces[i].x]
-        b = vertices[faces[i].y]
-        c = vertices[faces[i].z]
+        a = pos[faces[i].x]
+        b = pos[faces[i].y]
+        c = pos[faces[i].z]
         B_i_inv = ti.Matrix.cols([a - c, b - c])
         B[i] = B_i_inv.inverse()
+
 
 @ti.kernel
 def update_F():
     for i in range(NF):
         ia, ib, ic = faces[i]
-        a = vertices[ia]
-        b = vertices[ib]
-        c = vertices[ic]
+        a = pos[ia]
+        b = pos[ib]
+        c = pos[ic]
         V[i] = abs((a - c).cross(b - c))
         D_i = ti.Matrix.cols([a - c, b - c])
         F[i] = D_i @ B[i]
@@ -56,18 +58,19 @@ def update_phi():
 @ti.kernel
 def advance():
     for i in range(NV):
-        f_i = -vertices.grad[i]
-        velocity[i] += dt * f_i
-        velocity[i] *= ti.exp(-dt * damping)
+        f_i = -pos.grad[i]
+        vel[i] += dt * (f_i + gravity)
+        vel[i] *= ti.exp(-dt * damping)
     for i in range(NV):
-        vertices[i] += dt * velocity[i]
+        vel[i] = tl.boundReflect(pos[i], vel[i], 0, 1, 0)
+        pos[i] += dt * vel[i]
 
 
 def paint_phi():
     for i in range(NF):
-        a = vertices[faces[i].x]
-        b = vertices[faces[i].y]
-        c = vertices[faces[i].z]
+        a = pos[faces[i].x]
+        b = pos[faces[i].y]
+        c = pos[faces[i].z]
         k = phi[i] * 0.002
         color = k * tl.D.xyy + (1 - k) * tl.D.yxy
         try:
@@ -80,11 +83,11 @@ def pull(m0):
     closest = -1
     closest_dist = 1e5
     for i in range(NV):
-        dist = (m0 - vertices[i].value).L
+        dist = (m0 - pos[i].value).L
         if dist < closest_dist:
             closest, closest_dist = i, dist
 
-    vertices[closest] = m0.entries
+    pos[closest] = m0.entries
 
 
 @ti.kernel
@@ -92,7 +95,7 @@ def init():
     for i in range(NF):
         faces[i] = [i, i + 1, i + 2]
     for i in range(NV):
-        vertices[i] = tl.vec(i / NV * 0.8 + 0.1,
+        pos[i] = tl.vec(i / NV * 0.8 + 0.1,
                 0.5 + ti.pow(-1, i) * (ti.random() * 0.0 + 0.9) * 0.15)
 
 
@@ -113,5 +116,5 @@ while gui.running:
     advance()
     paint_phi()
 
-    gui.circles(vertices.to_numpy(), radius=4)
+    gui.circles(pos.to_numpy(), radius=4)
     gui.show()
