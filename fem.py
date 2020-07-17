@@ -2,13 +2,17 @@ import taichi as ti
 import taichi_glsl as tl
 ti.init()
 
-NF = 32
-NV = NF + 2
+N = 4
+NF = 2 * N ** 2
+NV = (N + 1) ** 2
 E, nu = 5e3, 0.2
 mu, lam = E / 2 / (1 + nu), E * nu / (1 + nu) / (1 - 2 * nu)
 gravity = tl.vec(0, -40)
 damping = 20.0
 dt = 5e-4
+
+ball_pos = tl.vec(0.5, 0.0)
+ball_radius = 0.35
 
 pos = ti.Vector.var(2, ti.f32, NV, needs_grad=True)
 vel = ti.Vector.var(2, ti.f32, NV)
@@ -62,7 +66,7 @@ def advance():
         vel[i] += dt * (f_i + gravity)
         vel[i] *= ti.exp(-dt * damping)
     for i in range(NV):
-        vel[i] = tl.ballBoundReflect(pos[i], vel[i], tl.vec(0.5, 0.0), 0.35)
+        vel[i] = tl.ballBoundReflect(pos[i], vel[i], ball_pos, ball_radius)
         vel[i] = tl.boundReflect(pos[i], vel[i], 0, 1, 0)
         pos[i] += dt * vel[i]
 
@@ -93,11 +97,12 @@ def pull(m0):
 
 @ti.kernel
 def init():
-    for i in range(NF):
-        faces[i] = [i, i + 1, i + 2]
-    for i in range(NV):
-        pos[i] = tl.vec(i / NV * 0.8 + 0.1,
-                0.5 + pow(-1, i) / NV)
+    for i, j in ti.ndrange(N + 1, N + 1):
+        pos[i * (N + 1) + j] = tl.vec(i, j) / N * 0.25 + 0.5 
+    for i, j in ti.ndrange(N, N):
+        k = (i * N + j) * 2
+        faces[k + 0] = [i * (N + 1) + j, (i + 1) * (N + 1) + j, (i + 1) * (N + 1) + (j + 1)]
+        faces[k + 1] = [(i + 1) * (N + 1) + (j + 1), i * (N + 1) + j, i * (N + 1) + (j + 1)]
 
 
 init()
@@ -117,5 +122,6 @@ while gui.running:
     advance()
     paint_phi()
 
-    gui.circles(pos.to_numpy(), radius=4)
+    gui.circles(pos.to_numpy(), radius=2, color=0xaa6633)
+    gui.circle(ball_pos, radius=ball_radius * 512, color=0xffeecc)
     gui.show()
